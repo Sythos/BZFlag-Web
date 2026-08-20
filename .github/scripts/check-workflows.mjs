@@ -151,6 +151,8 @@ requireMarker(release, ".github/workflows/release.yml", "actions/download-artifa
 requireMarker(release, ".github/workflows/release.yml", "actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8");
 requireMarker(release, ".github/workflows/release.yml", "gh release view \"$RELEASE_TAG\" --repo \"$GITHUB_REPOSITORY\"");
 requireMarker(release, ".github/workflows/release.yml", "--repo \"$GITHUB_REPOSITORY\" --clobber");
+requireMarker(release, ".github/workflows/release.yml", "zip -X -q -r \"bzflag-web-client-${version}.zip\"");
+requireMarker(release, ".github/workflows/release.yml", "zip -X -q -r \"bzflag-web-server-${version}.zip\"");
 const security = workflows.get("security.yml") || "";
 requireMarker(security, ".github/workflows/security.yml", "github/codeql-action/init@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd");
 requireMarker(security, ".github/workflows/security.yml", "github/codeql-action/analyze@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd");

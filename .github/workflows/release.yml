@@ -306,9 +306,9 @@ jobs:
           source_date_epoch="$(git show -s --format=%ct "${RELEASE_TAG}^{commit}")"
           export SOURCE_DATE_EPOCH="$source_date_epoch"
           find "release/bzflag-web-client-${version}" "release/bzflag-web-server-${version}" -exec touch -h -d "@${SOURCE_DATE_EPOCH}" {} +
-          (cd release && zip -X -q "bzflag-web-client-${version}.zip" "bzflag-web-client-${version}")
+          (cd release && zip -X -q -r "bzflag-web-client-${version}.zip" "bzflag-web-client-${version}")
           (cd release && tar --sort=name --mtime="@${SOURCE_DATE_EPOCH}" --owner=0 --group=0 --numeric-owner -czf "bzflag-web-server-${version}.tar.gz" "bzflag-web-server-${version}")
-          (cd release && zip -X -q "bzflag-web-server-${version}.zip" "bzflag-web-server-${version}")
+          (cd release && zip -X -q -r "bzflag-web-server-${version}.zip" "bzflag-web-server-${version}")
 
       - name: Build Docker package
         shell: bash
