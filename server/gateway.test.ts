@@ -28,6 +28,7 @@ import assert from 'node:assert/strict';
 import type { AddressInfo, Server as TcpServer, Socket } from 'node:net';
 import type { RemoteInfo, Socket as DatagramSocket } from 'node:dgram';
 import type { TestContext } from 'node:test';
+import { createBzFlagLoopbackFixture } from './fixtures/bzflag-loopback.js';
 import {
   CHANNEL_TCP,
   CHANNEL_UDP,
@@ -170,6 +171,14 @@ function awaitableSocket(port: number): Promise<UpgradeResult> {
   });
 }
 
+function bzFlagPacket(code: number, payload: Buffer = Buffer.alloc(0)): Buffer {
+  const packet = Buffer.alloc(4 + payload.length);
+  packet.writeUInt16BE(payload.length, 0);
+  packet.writeUInt16BE(code, 2);
+  payload.copy(packet, 4);
+  return packet;
+}
+
 test('bridge envelope encodes explicit TCP and UDP channels', () => {
   const tcp = encodeBridgeMessage(CHANNEL_TCP, Buffer.from('tcp'));
   const udp = encodeBridgeMessage(CHANNEL_UDP, Buffer.from('udp'));
@@ -242,6 +251,114 @@ test('gateway exposes health and forwards TCP and UDP traffic only to an allowli
   assert.deepEqual(decodeBridgeMessage(udpFrame.payload).payload, Buffer.from('udp-reply:ping'));
 
   connection.end(maskedWebSocketFrame(Buffer.alloc(0), 8));
+});
+
+test('gateway relays BZFlag TCP streams and intact UDP datagrams through the bridge', async (t: TestContext) => {
+  const fixture = await createBzFlagLoopbackFixture();
+  t.after(() => fixture.close());
+  const gateway = createGateway({
+    host: '127.0.0.1',
+    port: 0,
+    sessionToken: 'test-token',
+    allowedOrigins: ['http://localhost:3000'],
+    servers: [{
+      id: 'official-loopback',
+      kind: 'official',
+      host: '127.0.0.1',
+      port: fixture.tcpPort,
+      udpPort: fixture.udpPort,
+    }],
+    limits: { maxFrameBytes: 1024, maxBufferedBytes: 8192, maxMessagesPerSecond: 20, maxBytesPerSecond: 8192, idleTimeoutMs: 5000 },
+  });
+  const address = await gateway.start();
+  t.after(() => gateway.stop());
+
+  const connectionResult = await new Promise<UpgradeResult>((resolve, reject) => {
+    const connection = createConnection({ host: '127.0.0.1', port: address.port });
+    let response = Buffer.alloc(0);
+    const onData = (chunk: Buffer | string) => {
+      response = Buffer.concat([response, Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)]);
+      const marker = response.indexOf('\r\n\r\n');
+      if (marker < 0) return;
+      connection.off('data', onData);
+      resolve({ connection, response: response.subarray(0, marker + 4).toString('ascii'), remainder: response.subarray(marker + 4) });
+    };
+    connection.on('data', onData);
+    connection.once('error', reject);
+    connection.on('connect', () => connection.write([
+      'GET /bridge?server=official-loopback&token=test-token HTTP/1.1',
+      'Host: 127.0.0.1',
+      'Upgrade: websocket',
+      'Connection: Upgrade',
+      'Sec-WebSocket-Version: 13',
+      `Sec-WebSocket-Key: ${randomBytes(16).toString('base64')}`,
+      'Origin: http://localhost:3000',
+      '',
+      '',
+    ].join('\r\n')));
+  });
+  assert.match(connectionResult.response, /^HTTP\/1\.1 101 Switching Protocols/);
+
+  const tcpPacket = bzFlagPacket(0x656e, Buffer.from([0, 1, 2, 3]));
+  connectionResult.connection.write(maskedWebSocketFrame(encodeBridgeMessage(CHANNEL_TCP, tcpPacket)));
+  const tcpFirst = await readServerFrame(connectionResult.connection);
+  const tcpSecond = await readServerFrame(connectionResult.connection);
+  const tcpPayload = Buffer.concat([
+    decodeBridgeMessage(tcpFirst.payload).payload,
+    decodeBridgeMessage(tcpSecond.payload).payload,
+  ]);
+  assert.deepEqual(tcpPayload, tcpPacket);
+
+  const udpPacket = bzFlagPacket(0x7075, Buffer.from([0xaa, 0xbb, 0xcc]));
+  connectionResult.connection.write(maskedWebSocketFrame(encodeBridgeMessage(CHANNEL_UDP, udpPacket)));
+  const udpFrame = await readServerFrame(connectionResult.connection);
+  const udpMessage = decodeBridgeMessage(udpFrame.payload);
+  assert.equal(udpMessage.channel, CHANNEL_UDP);
+  assert.deepEqual(udpMessage.payload, udpPacket);
+
+  connectionResult.connection.end(maskedWebSocketFrame(Buffer.alloc(0), 8));
+});
+
+test('gateway closes a session before TCP write buffering can exceed its limit', async (t: TestContext) => {
+  const target = createTcpServer();
+  const targetPort = await listenTcp(target);
+  t.after(() => target.close());
+  const gateway = createGateway({
+    host: '127.0.0.1',
+    port: 0,
+    sessionToken: 'test-token',
+    allowedOrigins: ['http://localhost:3000'],
+    servers: [{ id: 'official-test', host: '127.0.0.1', port: targetPort }],
+    limits: { maxFrameBytes: 1024, maxBufferedBytes: 64, idleTimeoutMs: 5000 },
+  });
+  const address = await gateway.start();
+  t.after(() => gateway.stop());
+
+  const connection = await awaitableSocket(address.port);
+  assert.match(connection.response, /^HTTP\/1\.1 101 Switching Protocols/);
+  connection.connection.write(maskedWebSocketFrame(encodeBridgeMessage(CHANNEL_TCP, Buffer.alloc(100))));
+  await waitForSocketClose(connection.connection);
+});
+
+test('gateway rejects UDP datagrams larger than the upstream 2.4.31 limit', async (t: TestContext) => {
+  const target = createTcpServer();
+  const targetPort = await listenTcp(target);
+  t.after(() => target.close());
+  const gateway = createGateway({
+    host: '127.0.0.1',
+    port: 0,
+    sessionToken: 'test-token',
+    allowedOrigins: ['http://localhost:3000'],
+    servers: [{ id: 'official-test', host: '127.0.0.1', port: targetPort }],
+    limits: { maxFrameBytes: 1024, maxBufferedBytes: 8192, idleTimeoutMs: 5000 },
+  });
+  const address = await gateway.start();
+  t.after(() => gateway.stop());
+
+  const connection = await awaitableSocket(address.port);
+  assert.match(connection.response, /^HTTP\/1\.1 101 Switching Protocols/);
+  connection.connection.write(maskedWebSocketFrame(encodeBridgeMessage(CHANNEL_UDP, Buffer.alloc(69))));
+  await waitForSocketClose(connection.connection);
 });
 
 test('gateway rejects a WebSocket upgrade with an untrusted Origin', async (t: TestContext) => {

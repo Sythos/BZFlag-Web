@@ -22,6 +22,7 @@ SOFTWARE.
 */
 
 const CACHE_NAME = "bzflag-web-client-v0.1.0";
+const ASSET_MANIFEST = "./assets/asset-manifest.json";
 const STATIC_ASSETS = [
   "./",
   "./index.html",
@@ -33,24 +34,34 @@ const STATIC_ASSETS = [
   "./dist/renderer.js",
   "./dist/protocol.js",
   "./dist/game.js",
+  "./dist/state.js",
+  "./dist/service-worker.js",
   "./manifest.webmanifest",
-  "./assets/favicon.svg",
-  "./assets/social-card.svg",
-  "./assets/branding/favicon.ico",
-  "./assets/branding/apple-touch-icon.png",
-  "./assets/branding/android-chrome-192x192.png",
-  "./assets/branding/android-chrome-512x512.png",
-  "./assets/branding/og-image.png",
-  "./assets/branding/social-card.png",
-  "./assets/branding/android-chrome-192x192.svg",
-  "./assets/branding/android-chrome-512x512.svg",
-  "./assets/branding/apple-touch-icon.svg"
+  ASSET_MANIFEST
 ];
 
+async function resolveAssetManifest() {
+  const response = await fetch(ASSET_MANIFEST, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`Asset manifest request failed with HTTP ${response.status}`);
+  }
+  const manifest = await response.json();
+  if (!Array.isArray(manifest.entries)) {
+    throw new Error("Asset manifest does not contain an entries array");
+  }
+  const assetPaths = manifest.entries.map((entry) => entry?.path);
+  if (assetPaths.some((path) => typeof path !== "string" || !path.startsWith("./") || path.includes("://"))) {
+    throw new Error("Asset manifest contains an absolute or invalid path");
+  }
+  return [...new Set([...STATIC_ASSETS, ...assetPaths])];
+}
+
 self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS)).then(() => self.skipWaiting())
-  );
+  event.waitUntil((async () => {
+    const cache = await caches.open(CACHE_NAME);
+    await cache.addAll(await resolveAssetManifest());
+    await self.skipWaiting();
+  })());
 });
 
 self.addEventListener("activate", (event) => {
@@ -68,14 +79,23 @@ self.addEventListener("fetch", (event) => {
   if (url.origin !== self.location.origin) {
     return;
   }
-  event.respondWith(
-    caches.match(request).then((cached) => cached || fetch(request).then((response) => {
-      if (!response || response.status !== 200 || response.type !== "basic") {
-        return response;
+  event.respondWith((async () => {
+    const cached = await caches.match(request, { ignoreSearch: true });
+    if (cached) {
+      return cached;
+    }
+    try {
+      const response = await fetch(request);
+      if (response && response.status === 200 && response.type === "basic") {
+        const copy = response.clone();
+        event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.put(request, copy)));
       }
-      const copy = response.clone();
-      caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
       return response;
-    }).catch(() => caches.match("./index.html")))
-  );
+    } catch {
+      if (request.mode === "navigate") {
+        return (await caches.match("./index.html")) || Response.error();
+      }
+      return Response.error();
+    }
+  })());
 });

@@ -42,7 +42,10 @@ export const CHANNEL_UDP = 1;
 const WEBSOCKET_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 const DEFAULT_MAX_FRAME_BYTES = 1024 * 1024;
 const DEFAULT_MAX_BUFFERED_BYTES = 4 * 1024 * 1024;
-const DEFAULT_MAX_UDP_BYTES = 65507;
+// BZFlag 2.4.31's Protocol.h defines MaxUDPPacketLen as 68 bytes, including
+// the four-byte length/code header. Keep UDP datagrams intact and reject larger
+// payloads before they reach the allowlisted server.
+const DEFAULT_MAX_UDP_BYTES = 68;
 const INDEX_HTML_PATHS = [
   fileURLToPath(new URL('./index.html', import.meta.url)),
   fileURLToPath(new URL('../index.html', import.meta.url)),
@@ -805,24 +808,28 @@ class GatewaySession {
   }
 
   #connect(): void {
-    this.tcp = createConnection({ host: this.target.host, port: this.target.port });
-    this.tcp.setNoDelay(true);
-    this.tcp.setTimeout(this.gateway.config.limits.idleTimeoutMs, () => this.close('TCP idle timeout'));
-    this.tcp.on('connect', () => {
-      this.lastActivity = Date.now();
-    });
-    this.tcp.on('data', (data: Buffer) => this.#sendTargetData(CHANNEL_TCP, data));
-    this.tcp.on('error', (error: NodeJS.ErrnoException) => this.#fail(`TCP connection error: ${error.code || 'error'}`));
-    this.tcp.on('close', () => {
-      if (!this.closed) this.close('TCP connection closed');
-    });
+    try {
+      this.tcp = createConnection({ host: this.target.host, port: this.target.port });
+      this.tcp.setNoDelay(true);
+      this.tcp.setTimeout(this.gateway.config.limits.idleTimeoutMs, () => this.close('TCP idle timeout'));
+      this.tcp.on('connect', () => {
+        this.lastActivity = Date.now();
+      });
+      this.tcp.on('data', (data: Buffer) => this.#sendTargetData(CHANNEL_TCP, data));
+      this.tcp.on('error', (error: NodeJS.ErrnoException) => this.#fail(`TCP connection error: ${error.code || 'error'}`));
+      this.tcp.on('close', () => {
+        if (!this.closed) this.close('TCP connection closed');
+      });
 
-    this.udp = createSocket(this.target.host.includes(':') ? 'udp6' : 'udp4');
-    this.udp.on('message', (data: Buffer, _remote: RemoteInfo) => this.#sendTargetData(CHANNEL_UDP, data));
-    this.udp.on('error', (error: NodeJS.ErrnoException) => this.#fail(`UDP connection error: ${error.code || 'error'}`));
-    this.udp.connect(this.target.udpPort, this.target.host, () => {
-      this.lastActivity = Date.now();
-    });
+      this.udp = createSocket(this.target.host.includes(':') ? 'udp6' : 'udp4');
+      this.udp.on('message', (data: Buffer, _remote: RemoteInfo) => this.#sendTargetData(CHANNEL_UDP, data));
+      this.udp.on('error', (error: NodeJS.ErrnoException) => this.#fail(`UDP connection error: ${error.code || 'error'}`));
+      this.udp.connect(this.target.udpPort, this.target.host, () => {
+        this.lastActivity = Date.now();
+      });
+    } catch (error: any) {
+      this.#fail(`Target connection setup failed: ${error.code || 'error'}`);
+    }
   }
 
   #handleClientMessage(payload: Buffer): void {
@@ -844,17 +851,31 @@ class GatewaySession {
       return;
     }
     if (message.channel === CHANNEL_TCP) {
-      if (!this.tcp || this.tcp.destroyed) return this.#fail('TCP connection is unavailable');
-      this.tcp.write(message.payload);
+      if (!this.tcp || this.tcp.destroyed || !this.tcp.writable) return this.#fail('TCP connection is unavailable');
+      if (this.tcp.writableLength + message.payload.length > this.gateway.config.limits.maxBufferedBytes) {
+        return this.#fail('TCP send buffer is full', 1013);
+      }
+      try {
+        this.tcp.write(message.payload);
+      } catch {
+        this.#fail('TCP write failed');
+      }
     } else {
       if (!this.udp) return this.#fail('UDP connection is unavailable');
-      this.udp.send(message.payload);
+      try {
+        this.udp.send(message.payload);
+      } catch {
+        this.#fail('UDP write failed');
+      }
     }
   }
 
   #sendTargetData(channel: BridgeChannel, data: Buffer): void {
     if (this.closed) return;
     this.lastActivity = Date.now();
+    if (channel === CHANNEL_UDP && data.length > DEFAULT_MAX_UDP_BYTES) {
+      return this.#fail('UDP datagram exceeds the protocol limit', 1009);
+    }
     const chunkSize = Math.max(1, this.gateway.config.limits.maxFrameBytes - 8);
     for (const chunk of splitBuffer(data, chunkSize)) {
       const envelope = encodeBridgeMessage(channel, chunk, this.gateway.config.limits.maxFrameBytes);

@@ -1,0 +1,945 @@
+{
+  "_license": "SPDX-License-Identifier: MIT\nCopyright (c) 2026 Sythos (https://www.sythos.net)\n\nMIT License\n\nCopyright (c) 2026 Sythos (https://www.sythos.net)\n\nPermission is hereby granted, free of charge to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.",
+  "name": "BZFlag Web Client local asset manifest",
+  "author": "Sythos (https://www.sythos.net)",
+  "relative-to": "./",
+  "upstream": {
+    "project": "BZFlag",
+    "version": "2.4.31",
+    "ref": "59b3ef44fa4538296be8b7f5eeafc2a4e57d0b74",
+    "branch": "2.4"
+  },
+  "policy": "Branding assets are MIT original work. Files under assets/upstream/ retain upstream notices and applicable license terms; fonts/DejaVu.License is the local font notice.",
+  "entries": [
+    {
+      "path": "./assets/asset-manifest.json",
+      "license": "MIT",
+      "source": "Sythos original project metadata"
+    },
+    {
+      "path": "./assets/branding/android-chrome-192x192.png",
+      "license": "MIT",
+      "source": "Sythos original project asset"
+    },
+    {
+      "path": "./assets/branding/android-chrome-192x192.svg",
+      "license": "MIT",
+      "source": "Sythos original project asset"
+    },
+    {
+      "path": "./assets/branding/android-chrome-512x512.png",
+      "license": "MIT",
+      "source": "Sythos original project asset"
+    },
+    {
+      "path": "./assets/branding/android-chrome-512x512.svg",
+      "license": "MIT",
+      "source": "Sythos original project asset"
+    },
+    {
+      "path": "./assets/branding/apple-touch-icon.png",
+      "license": "MIT",
+      "source": "Sythos original project asset"
+    },
+    {
+      "path": "./assets/branding/apple-touch-icon.svg",
+      "license": "MIT",
+      "source": "Sythos original project asset"
+    },
+    {
+      "path": "./assets/branding/favicon.ico",
+      "license": "MIT",
+      "source": "Sythos original project asset"
+    },
+    {
+      "path": "./assets/branding/og-image.png",
+      "license": "MIT",
+      "source": "Sythos original project asset"
+    },
+    {
+      "path": "./assets/branding/social-card.png",
+      "license": "MIT",
+      "source": "Sythos original project asset"
+    },
+    {
+      "path": "./assets/favicon.svg",
+      "license": "MIT",
+      "source": "Sythos original project asset"
+    },
+    {
+      "path": "./assets/social-card.svg",
+      "license": "MIT",
+      "source": "Sythos original project asset"
+    },
+    {
+      "path": "./assets/upstream/README.md",
+      "license": "MIT",
+      "source": "Sythos asset provenance manifest"
+    },
+    {
+      "path": "./assets/upstream/automatic_icon.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/blend_flash.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/blue_basetop.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/blue_basewall.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/blue_bolt.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/blue_icon.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/blue_laser.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/blue_super_bolt.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/blue_tank.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/boom.wav",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/bounce.wav",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/boxwall.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/bubble.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/burrow.wav",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/bzflag-256x256.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/bzflag-32x32.xpm",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/bzflag-48x48.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/bzflag.desktop",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/caution.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/clouds.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/dusty_flare.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/explode1.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/explode2.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/explosion.wav",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/fire.wav",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/flag.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/flag_alert.wav",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/flag_drop.wav",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/flag_grab.wav",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/flag_lost.wav",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/flag_won.wav",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/flap.wav",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/fonts/DejaVu.License",
+      "license": "DejaVu font license (see ./assets/upstream/fonts/DejaVu.License)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/fonts/DejaVuSansCondensedBold_10.fmt",
+      "license": "DejaVu font license (see ./assets/upstream/fonts/DejaVu.License)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/fonts/DejaVuSansCondensedBold_10.png",
+      "license": "DejaVu font license (see ./assets/upstream/fonts/DejaVu.License)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/fonts/DejaVuSansCondensedBold_12.fmt",
+      "license": "DejaVu font license (see ./assets/upstream/fonts/DejaVu.License)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/fonts/DejaVuSansCondensedBold_12.png",
+      "license": "DejaVu font license (see ./assets/upstream/fonts/DejaVu.License)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/fonts/DejaVuSansCondensedBold_16.fmt",
+      "license": "DejaVu font license (see ./assets/upstream/fonts/DejaVu.License)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/fonts/DejaVuSansCondensedBold_16.png",
+      "license": "DejaVu font license (see ./assets/upstream/fonts/DejaVu.License)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/fonts/DejaVuSansCondensedBold_24.fmt",
+      "license": "DejaVu font license (see ./assets/upstream/fonts/DejaVu.License)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/fonts/DejaVuSansCondensedBold_24.png",
+      "license": "DejaVu font license (see ./assets/upstream/fonts/DejaVu.License)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/fonts/DejaVuSansCondensedBold_32.fmt",
+      "license": "DejaVu font license (see ./assets/upstream/fonts/DejaVu.License)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/fonts/DejaVuSansCondensedBold_32.png",
+      "license": "DejaVu font license (see ./assets/upstream/fonts/DejaVu.License)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/fonts/DejaVuSansCondensedBold_48.fmt",
+      "license": "DejaVu font license (see ./assets/upstream/fonts/DejaVu.License)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/fonts/DejaVuSansCondensedBold_48.png",
+      "license": "DejaVu font license (see ./assets/upstream/fonts/DejaVu.License)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/fonts/DejaVuSansCondensedBold_6.fmt",
+      "license": "DejaVu font license (see ./assets/upstream/fonts/DejaVu.License)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/fonts/DejaVuSansCondensedBold_6.png",
+      "license": "DejaVu font license (see ./assets/upstream/fonts/DejaVu.License)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/fonts/DejaVuSansCondensedBold_64.fmt",
+      "license": "DejaVu font license (see ./assets/upstream/fonts/DejaVu.License)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/fonts/DejaVuSansCondensedBold_64.png",
+      "license": "DejaVu font license (see ./assets/upstream/fonts/DejaVu.License)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/fonts/DejaVuSansCondensedBold_8.fmt",
+      "license": "DejaVu font license (see ./assets/upstream/fonts/DejaVu.License)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/fonts/DejaVuSansCondensedBold_8.png",
+      "license": "DejaVu font license (see ./assets/upstream/fonts/DejaVu.License)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/fonts/DejaVuSansMonoBold_10.fmt",
+      "license": "DejaVu font license (see ./assets/upstream/fonts/DejaVu.License)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/fonts/DejaVuSansMonoBold_10.png",
+      "license": "DejaVu font license (see ./assets/upstream/fonts/DejaVu.License)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/fonts/DejaVuSansMonoBold_12.fmt",
+      "license": "DejaVu font license (see ./assets/upstream/fonts/DejaVu.License)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/fonts/DejaVuSansMonoBold_12.png",
+      "license": "DejaVu font license (see ./assets/upstream/fonts/DejaVu.License)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/fonts/DejaVuSansMonoBold_16.fmt",
+      "license": "DejaVu font license (see ./assets/upstream/fonts/DejaVu.License)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/fonts/DejaVuSansMonoBold_16.png",
+      "license": "DejaVu font license (see ./assets/upstream/fonts/DejaVu.License)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/fonts/DejaVuSansMonoBold_24.fmt",
+      "license": "DejaVu font license (see ./assets/upstream/fonts/DejaVu.License)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/fonts/DejaVuSansMonoBold_24.png",
+      "license": "DejaVu font license (see ./assets/upstream/fonts/DejaVu.License)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/fonts/DejaVuSansMonoBold_32.fmt",
+      "license": "DejaVu font license (see ./assets/upstream/fonts/DejaVu.License)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/fonts/DejaVuSansMonoBold_32.png",
+      "license": "DejaVu font license (see ./assets/upstream/fonts/DejaVu.License)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/fonts/DejaVuSansMonoBold_48.fmt",
+      "license": "DejaVu font license (see ./assets/upstream/fonts/DejaVu.License)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/fonts/DejaVuSansMonoBold_48.png",
+      "license": "DejaVu font license (see ./assets/upstream/fonts/DejaVu.License)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/fonts/DejaVuSansMonoBold_6.fmt",
+      "license": "DejaVu font license (see ./assets/upstream/fonts/DejaVu.License)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/fonts/DejaVuSansMonoBold_6.png",
+      "license": "DejaVu font license (see ./assets/upstream/fonts/DejaVu.License)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/fonts/DejaVuSansMonoBold_64.fmt",
+      "license": "DejaVu font license (see ./assets/upstream/fonts/DejaVu.License)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/fonts/DejaVuSansMonoBold_64.png",
+      "license": "DejaVu font license (see ./assets/upstream/fonts/DejaVu.License)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/fonts/DejaVuSansMonoBold_8.fmt",
+      "license": "DejaVu font license (see ./assets/upstream/fonts/DejaVu.License)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/fonts/DejaVuSansMonoBold_8.png",
+      "license": "DejaVu font license (see ./assets/upstream/fonts/DejaVu.License)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/fonts/readme",
+      "license": "DejaVu font license (see ./assets/upstream/fonts/DejaVu.License)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/frog.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/green_basetop.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/green_basewall.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/green_bolt.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/green_icon.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/green_laser.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/green_super_bolt.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/green_tank.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/hunt.wav",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/hunt_select.wav",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/hunter_bolt.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/hunter_laser.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/hunter_super_bolt.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/hunter_tank.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/jump.wav",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/jumpjets.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/killteam.wav",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/l10n/ISO-639-2_values_8bits.txt",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/l10n/bzflag_cs_CZ.po",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/l10n/bzflag_da.po",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/l10n/bzflag_de.po",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/l10n/bzflag_en_US_l33t.po",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/l10n/bzflag_en_US_redneck.po",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/l10n/bzflag_es.po",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/l10n/bzflag_fr.po",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/l10n/bzflag_it.po",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/l10n/bzflag_kg.po",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/l10n/bzflag_lt.po",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/l10n/bzflag_nl.po",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/l10n/bzflag_pt.po",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/l10n/bzflag_ru.po",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/l10n/bzflag_sk.po",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/l10n/bzflag_sv.po",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/l10n/bzflag_xx.po",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/land.wav",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/laser.wav",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/lock.wav",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/menu_arrow.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/mesh.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/message_admin.wav",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/message_private.wav",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/message_team.wav",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/missile.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/missile.wav",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/moon.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/mountain1.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/mountain2.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/mountain3.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/mountain4.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/mountain5.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/observer_icon.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/phantom.wav",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/pop.wav",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/puddle.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/puffs.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/purple_basetop.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/purple_basewall.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/purple_bolt.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/purple_icon.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/purple_laser.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/purple_super_bolt.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/purple_tank.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/pyrwall.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/rabbit_bolt.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/rabbit_laser.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/rabbit_super_bolt.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/rabbit_tank.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/radar.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/raindrop.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/red_basetop.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/red_basewall.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/red_bolt.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/red_icon.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/red_laser.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/red_super_bolt.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/red_tank.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/ricochet.wav",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/rogue_bolt.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/rogue_icon.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/rogue_laser.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/rogue_super_bolt.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/rogue_tank.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/roof.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/shock.wav",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/shot_tail.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/snowflake.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/spree1.wav",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/spree2.wav",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/spree3.wav",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/spree4.wav",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/std_ground.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/steamroller.wav",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/teamgrab.wav",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/telelink.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/teleport.wav",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/tetrawall.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/thief.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/thief.wav",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/title.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/treads.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/wall.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/water.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    },
+    {
+      "path": "./assets/upstream/zone_ground.png",
+      "license": "LGPL-2.1-only OR MPL-2.0 (preserved upstream notice)",
+      "source": "BZFlag 2.4.31 pinned upstream asset subset"
+    }
+  ]
+}

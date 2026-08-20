@@ -55,6 +55,15 @@ function requireMarker(source, path, marker) {
   if (!source.includes(marker)) failures.push(`${path}: missing required marker ${marker}`);
 }
 
+function requireBefore(source, path, firstMarker, secondMarker) {
+  const firstIndex = source.indexOf(firstMarker);
+  const secondIndex = source.indexOf(secondMarker);
+  if (firstIndex < 0 || secondIndex < 0) return;
+  if (firstIndex >= secondIndex) {
+    failures.push(`${path}: ${firstMarker} must run before ${secondMarker}`);
+  }
+}
+
 const workflows = new Map();
 for (const name of requiredWorkflows) workflows.set(name, await readWorkflow(name));
 
@@ -78,13 +87,18 @@ requireMarker(ci, ".github/workflows/ci.yml", "npm run typecheck --prefix client
 requireMarker(ci, ".github/workflows/ci.yml", "npm test --prefix server");
 requireMarker(ci, ".github/workflows/ci.yml", "npm test --prefix client");
 requireMarker(ci, ".github/workflows/ci.yml", "node .github/scripts/check-readmes.mjs");
+requireMarker(ci, ".github/workflows/ci.yml", "browser-e2e:");
+requireMarker(ci, ".github/workflows/ci.yml", "run-browser-e2e.mjs");
+requireMarker(ci, ".github/workflows/ci.yml", "playwright@1.52.0");
 
 const container = workflows.get("container.yml") || "";
 requireMarker(container, ".github/workflows/container.yml", "context: server");
 requireMarker(container, ".github/workflows/container.yml", "file: server/Dockerfile");
+requireMarker(container, ".github/workflows/container.yml", "validate-docker-context.mjs");
 requireMarker(container, ".github/workflows/container.yml", "push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}");
 requireMarker(container, ".github/workflows/container.yml", "load: ${{ github.event_name != 'push' }}");
 requireMarker(container, ".github/workflows/container.yml", "if: github.event_name != 'push'");
+requireBefore(container, ".github/workflows/container.yml", "validate-docker-context.mjs", "docker/build-push-action@");
 if (/push:\s*\$\{\{\s*github\.event_name\s*!=\s*'pull_request'\s*\}\}/.test(container)) {
   failures.push(".github/workflows/container.yml: image publishing must be limited to the protected main push event");
 }
@@ -98,6 +112,9 @@ requireMarker(release, ".github/workflows/release.yml", "context: server");
 requireMarker(release, ".github/workflows/release.yml", "file: server/Dockerfile");
 requireMarker(release, ".github/workflows/release.yml", "node --check");
 requireMarker(release, ".github/workflows/release.yml", "node .github/scripts/check-readmes.mjs");
+requireMarker(release, ".github/workflows/release.yml", "validate-docker-context.mjs");
+requireMarker(release, ".github/workflows/release.yml", "run-browser-e2e.mjs");
+requireMarker(release, ".github/workflows/release.yml", "playwright@1.52.0");
 if (/find release -maxdepth 1 -type f[^\n]*>\s*release\/SHA256SUMS\.txt/.test(release)
   && !/!\s*-name\s+SHA256SUMS\.txt/.test(release)) {
   failures.push(".github/workflows/release.yml: SHA256SUMS.txt must not hash itself");

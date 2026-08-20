@@ -73,6 +73,10 @@ for (const path of publishableReadmes) {
   const lines = source.split(/\r?\n/);
   const lower = source.toLowerCase();
 
+  if (lower.includes("gateway.mjs")) {
+    failures.push(`${path}: legacy gateway.mjs reference is not permitted in publishable documentation`);
+  }
+
   const identityMarker = path === "client/assets/upstream/README.md" ? "upstream bzflag" : "bzflag web";
   if (!lower.includes(identityMarker)) failures.push(`${path}: missing project identity`);
   if (!lines.some((line) => /^=>\s+/.test(line))) {

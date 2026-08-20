@@ -2,6 +2,28 @@
  * SPDX-License-Identifier: MIT
  * Copyright (c) 2026 Sythos (https://www.sythos.net)
  *
+ * MIT License
+ *
+ * Copyright (c) 2026 Sythos (https://www.sythos.net)
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ *
  * Release-only validation. This deliberately uses Node.js built-ins so a tag
  * cannot bypass the project gates by omitting application dependencies.
  */
@@ -110,11 +132,22 @@ try {
   failures.push("server/package.json: invalid JSON");
 }
 
+const clientPackageText = await readText("client/package.json");
+let clientPackage = null;
+try {
+  clientPackage = JSON.parse(clientPackageText);
+} catch {
+  failures.push("client/package.json: invalid JSON");
+}
+
 if (rootPackage && rootPackage.version !== releaseTag.slice(1)) {
   failures.push(`package.json: version ${rootPackage.version} does not match ${releaseTag.slice(1)}`);
 }
 if (serverPackage && serverPackage.version !== releaseTag.slice(1)) {
   failures.push(`server/package.json: version ${serverPackage.version} does not match ${releaseTag.slice(1)}`);
+}
+if (clientPackage && clientPackage.version !== releaseTag.slice(1)) {
+  failures.push(`client/package.json: version ${clientPackage.version} does not match ${releaseTag.slice(1)}`);
 }
 
 const upstream = rootPackage?.["x-upstream"];
@@ -172,6 +205,7 @@ const requiredReleaseFiles = [
   "client/dist/i18n.js",
   "client/dist/protocol.js",
   "client/dist/renderer.js",
+  "client/dist/state.js",
   "client/dist/service-worker.js",
   "server/index.html",
   "server/gateway.ts",

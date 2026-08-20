@@ -22,6 +22,7 @@ FROM node:26-alpine AS build
 
 WORKDIR /build
 COPY package.json package-lock.json tsconfig.json gateway.ts gateway.test.ts ./
+COPY fixtures ./fixtures
 RUN npm ci
 RUN npm run build
 

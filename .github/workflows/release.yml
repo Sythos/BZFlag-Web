@@ -163,6 +163,27 @@ jobs:
           test -d client/dist
           test -d server/dist
 
+      - name: Validate Docker build context
+        run: node .github/scripts/validate-docker-context.mjs
+
+      - name: Install pinned Playwright runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          e2e_root="$RUNNER_TEMP/bzflag-web-e2e"
+          mkdir -p "$e2e_root"
+          npm install --prefix "$e2e_root" --no-save --no-package-lock --ignore-scripts playwright@1.52.0
+          export PLAYWRIGHT_BROWSERS_PATH="$e2e_root/browsers"
+          npx --prefix "$e2e_root" playwright install --with-deps chromium
+
+      - name: Run real browser Connect-to-game E2E
+        shell: bash
+        env:
+          PLAYWRIGHT_MODULE: ${{ runner.temp }}/bzflag-web-e2e/node_modules/playwright
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/bzflag-web-e2e/browsers
+          E2E_SCREENSHOT: ${{ runner.temp }}/bzflag-web-e2e/connect-to-game.png
+        run: node .github/scripts/run-browser-e2e.mjs
+
       - name: Run TypeScript package checks and tests
         shell: bash
         run: |

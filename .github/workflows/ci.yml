@@ -115,3 +115,56 @@ jobs:
           else
             echo "Native upstream build metadata is not part of this web-only checkout; skipping."
           fi
+
+  browser-e2e:
+    name: Browser Connect to game E2E
+    needs: typescript
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 26.x
+          check-latest: true
+
+      - name: Build client for browser E2E
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f client/package.json
+          test -f client/package-lock.json
+          npm ci --prefix client --ignore-scripts
+          npm run build --prefix client
+
+      - name: Install pinned Playwright runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          e2e_root="$RUNNER_TEMP/bzflag-web-e2e"
+          mkdir -p "$e2e_root"
+          npm install --prefix "$e2e_root" --no-save --no-package-lock --ignore-scripts playwright@1.52.0
+          export PLAYWRIGHT_BROWSERS_PATH="$e2e_root/browsers"
+          npx --prefix "$e2e_root" playwright install --with-deps chromium
+
+      - name: Run real browser Connect-to-game E2E
+        shell: bash
+        env:
+          PLAYWRIGHT_MODULE: ${{ runner.temp }}/bzflag-web-e2e/node_modules/playwright
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/bzflag-web-e2e/browsers
+          E2E_SCREENSHOT: ${{ runner.temp }}/bzflag-web-e2e/connect-to-game.png
+        run: node .github/scripts/run-browser-e2e.mjs
+
+      - name: Upload browser E2E screenshot
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: browser-e2e-screenshot-${{ github.run_id }}
+          path: ${{ runner.temp }}/bzflag-web-e2e/connect-to-game.png
+          if-no-files-found: ignore
+          retention-days: 7

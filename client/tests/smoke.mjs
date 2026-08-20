@@ -21,7 +21,7 @@
  * SOFTWARE.
  */
 
-import { access, readFile, stat } from "node:fs/promises";
+import { access, readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -34,6 +34,7 @@ const requiredFiles = [
   "app.ts",
   "renderer.ts",
   "protocol.ts",
+  "state.ts",
   "game.ts",
   "service-worker.ts",
   "build.mjs",
@@ -41,6 +42,7 @@ const requiredFiles = [
   "dist/game.js",
   "dist/i18n.js",
   "dist/protocol.js",
+  "dist/state.js",
   "dist/renderer.js",
   "dist/service-worker.js",
   "service-worker.js",
@@ -48,14 +50,21 @@ const requiredFiles = [
   "manifest.webmanifest",
   "assets/favicon.svg",
   "assets/social-card.svg",
+  "assets/asset-manifest.json",
   "assets/branding/favicon.ico",
   "assets/branding/apple-touch-icon.png",
   "assets/branding/android-chrome-192x192.png",
   "assets/branding/android-chrome-512x512.png",
   "assets/branding/og-image.png",
   "assets/branding/social-card.png",
+  "assets/upstream/fire.wav",
+  "assets/upstream/explosion.wav",
+  "assets/upstream/jump.wav",
+  "assets/upstream/flag_grab.wav",
   "assets/upstream/l10n/bzflag_it.po",
-  "assets/upstream/l10n/bzflag_en_US_l33t.po"
+  "assets/upstream/l10n/bzflag_en_US_l33t.po",
+  "tests/i18n.test.mjs",
+  "tests/service-worker.test.mjs"
 ];
 
 for (const relativePath of requiredFiles) {
@@ -75,8 +84,10 @@ async function assertLocalReference(reference, sourceFile) {
 
 const index = await readFile(join(root, "index.html"), "utf8");
 const game = await readFile(join(root, "web_game_run.html"), "utf8");
+const gameSource = await readFile(join(root, "game.ts"), "utf8");
 const serviceWorker = await readFile(join(root, "service-worker.ts"), "utf8");
 const manifest = JSON.parse(await readFile(join(root, "manifest.webmanifest"), "utf8"));
+const assetManifest = JSON.parse(await readFile(join(root, "assets/asset-manifest.json"), "utf8"));
 
 for (const [sourceFile, source] of [["index.html", index], ["web_game_run.html", game]]) {
   const references = [...source.matchAll(/(?:src|href|content)="(\.\/[^"#?]+(?:\?[^"#]*)?)"/g)];
@@ -85,8 +96,52 @@ for (const [sourceFile, source] of [["index.html", index], ["web_game_run.html",
 for (const reference of serviceWorker.matchAll(/"(\.\/[^"\n]+)"/g)) {
   await assertLocalReference(reference[1], "service-worker.ts");
 }
+for (const reference of gameSource.matchAll(/"(\.\/assets\/[^"\n]+)"/g)) {
+  await assertLocalReference(reference[1], "game.ts");
+}
 for (const value of JSON.stringify(manifest).matchAll(/"(\.\/[^"\\]+)"/g)) {
   await assertLocalReference(value[1], "manifest.webmanifest");
+}
+
+if (!assetManifest._license?.includes("SPDX-License-Identifier: MIT") || assetManifest["relative-to"] !== "./") {
+  throw new Error("asset-manifest.json is missing its MIT metadata or relative base");
+}
+if (!Array.isArray(assetManifest.entries) || assetManifest.entries.length === 0) {
+  throw new Error("asset-manifest.json has no cache entries");
+}
+const assetEntryPaths = new Set();
+for (const entry of assetManifest.entries) {
+  if (!entry || typeof entry.path !== "string" || !entry.path.startsWith("./assets/") || entry.path.includes("://")) {
+    throw new Error(`asset-manifest.json contains an invalid path: ${entry?.path}`);
+  }
+  if (assetEntryPaths.has(entry.path)) {
+    throw new Error(`asset-manifest.json contains a duplicate path: ${entry.path}`);
+  }
+  assetEntryPaths.add(entry.path);
+  await assertLocalReference(entry.path, "asset-manifest.json");
+  if (entry.path.startsWith("./assets/upstream/") && entry.path !== "./assets/upstream/README.md" && entry.license === "MIT") {
+    throw new Error(`upstream asset was incorrectly labelled MIT: ${entry.path}`);
+  }
+}
+
+async function collectFiles(directory, prefix) {
+  const files = [];
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name);
+    const relative = `${prefix}/${entry.name}`;
+    if (entry.isDirectory()) {
+      files.push(...await collectFiles(path, relative));
+    } else {
+      files.push(relative.replaceAll("\\", "/"));
+    }
+  }
+  return files;
+}
+
+for (const file of await collectFiles(join(root, "assets"), "assets")) {
+  if (!assetEntryPaths.has(`./${file}`)) {
+    throw new Error(`local asset is missing from asset-manifest.json: ${file}`);
+  }
 }
 
 for (const marker of ["connect-form", "remember-password", "session-token", "F11", "BZFS 2.4.31", "Sythos"]) {
@@ -103,5 +158,7 @@ if (!index.includes('id="gateway-endpoint"') || !index.includes('id="gateway-end
 }
 
 await import("./protocol.test.mjs");
+await import("./i18n.test.mjs");
+await import("./service-worker.test.mjs");
 
 console.log(`Client smoke checks passed (${requiredFiles.length} required files).`);

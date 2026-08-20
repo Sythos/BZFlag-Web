@@ -45,6 +45,25 @@ SOFTWARE.
     "xx"
   ];
 
+  const LOCALE_CATALOGS = {
+    cs_CZ: "./assets/upstream/l10n/bzflag_cs_CZ.po",
+    da: "./assets/upstream/l10n/bzflag_da.po",
+    de: "./assets/upstream/l10n/bzflag_de.po",
+    en_US_l33t: "./assets/upstream/l10n/bzflag_en_US_l33t.po",
+    en_US_redneck: "./assets/upstream/l10n/bzflag_en_US_redneck.po",
+    es: "./assets/upstream/l10n/bzflag_es.po",
+    fr: "./assets/upstream/l10n/bzflag_fr.po",
+    it: "./assets/upstream/l10n/bzflag_it.po",
+    kg: "./assets/upstream/l10n/bzflag_kg.po",
+    lt: "./assets/upstream/l10n/bzflag_lt.po",
+    nl: "./assets/upstream/l10n/bzflag_nl.po",
+    pt: "./assets/upstream/l10n/bzflag_pt.po",
+    ru: "./assets/upstream/l10n/bzflag_ru.po",
+    sk: "./assets/upstream/l10n/bzflag_sk.po",
+    sv: "./assets/upstream/l10n/bzflag_sv.po",
+    xx: "./assets/upstream/l10n/bzflag_xx.po"
+  };
+
   const ENGLISH = {
     language: "Language",
     clientReady: "Client ready",
@@ -149,6 +168,77 @@ SOFTWARE.
     xx: { language: "Experimental", connect: "Connect", disconnect: "Disconnect", nickname: "Nickname", server: "Server", password: "Password", team: "Team", motto: "Motto" }
   };
 
+  const CATALOG_CACHE = new Map();
+  const CATALOG_LOADS = new Map();
+
+  function unquotePo(value) {
+    const text = String(value || "").trim();
+    if (!text.startsWith('"') || !text.endsWith('"')) return "";
+    try {
+      return JSON.parse(text);
+    } catch {
+      return text.slice(1, -1);
+    }
+  }
+
+  function parsePo(source) {
+    const entries = new Map();
+    let msgid = null;
+    let msgstr = null;
+    let active = null;
+    const commit = () => {
+      if (msgid !== null && msgid !== "" && msgstr !== null && msgstr !== "") {
+        entries.set(msgid, msgstr);
+      }
+      msgid = null;
+      msgstr = null;
+      active = null;
+    };
+    for (const line of String(source || "").split(/\r?\n/)) {
+      if (!line.trim()) {
+        commit();
+        continue;
+      }
+      if (line.startsWith("#")) continue;
+      if (line.startsWith("msgid ")) {
+        if (msgid !== null || msgstr !== null) commit();
+        msgid = unquotePo(line.slice(6));
+        active = "msgid";
+      } else if (line.startsWith("msgstr ")) {
+        msgstr = unquotePo(line.slice(7));
+        active = "msgstr";
+      } else if (line.trim().startsWith('"') && active) {
+        const value = unquotePo(line.trim());
+        if (active === "msgid") msgid += value;
+        else msgstr += value;
+      }
+    }
+    commit();
+    return entries;
+  }
+
+  async function loadCatalog(locale) {
+    if (CATALOG_CACHE.has(locale)) return CATALOG_CACHE.get(locale);
+    if (CATALOG_LOADS.has(locale)) return CATALOG_LOADS.get(locale);
+    if (typeof fetch !== "function" || !LOCALE_CATALOGS[locale]) return new Map();
+    const load = fetch(LOCALE_CATALOGS[locale], { cache: "force-cache" })
+      .then((response) => response.ok ? response.text() : "")
+      .then((source) => {
+        const entries = parsePo(source);
+        CATALOG_CACHE.set(locale, entries);
+        const pack = LOCALE_PACKS[locale] || (LOCALE_PACKS[locale] = {});
+        for (const [key, english] of Object.entries(ENGLISH)) {
+          const translated = entries.get(english);
+          if (translated) pack[key] = translated;
+        }
+        return entries;
+      })
+      .catch(() => new Map())
+      .finally(() => CATALOG_LOADS.delete(locale));
+    CATALOG_LOADS.set(locale, load);
+    return load;
+  }
+
   function normaliseLocale(locale) {
     if (!locale) {
       return DEFAULT_LOCALE;
@@ -159,7 +249,14 @@ SOFTWARE.
       return match;
     }
     const prefix = lower.split(/[-_]/)[0];
+    if (prefix === "en") {
+      return DEFAULT_LOCALE;
+    }
     return SUPPORTED_LOCALES.find((candidate) => candidate.toLowerCase().startsWith(`${prefix}_`) || candidate.toLowerCase() === prefix) || DEFAULT_LOCALE;
+  }
+
+  function toLanguageTag(locale) {
+    return locale === DEFAULT_LOCALE ? "en" : locale.replaceAll("_", "-");
   }
 
   function readLocale() {
@@ -190,11 +287,13 @@ SOFTWARE.
       const key = element.getAttribute("data-i18n-title");
       element.setAttribute("title", translate(key));
     });
-    document.documentElement.lang = activeLocale === DEFAULT_LOCALE ? "en" : activeLocale;
-    document.dispatchEvent(new CustomEvent("bzflag:localechange", { detail: { locale: activeLocale } }));
+    document.documentElement.lang = toLanguageTag(activeLocale);
+    document.dispatchEvent(new CustomEvent("bzflag:localechange", {
+      detail: { locale: activeLocale, catalog: LOCALE_CATALOGS[activeLocale] || null }
+    }));
   }
 
-  function setLocale(locale) {
+  async function setLocale(locale) {
     activeLocale = normaliseLocale(locale);
     try {
       window.localStorage.setItem(LOCALE_STORAGE_KEY, activeLocale);
@@ -202,6 +301,9 @@ SOFTWARE.
       /* Storage is optional for a static shell. */
     }
     applyTranslations();
+    await loadCatalog(activeLocale);
+    applyTranslations();
+    return activeLocale;
   }
 
   function populateLocaleSelect(select) {
@@ -220,22 +322,26 @@ SOFTWARE.
       select.append(option);
     });
     select.value = activeLocale;
-    select.addEventListener("change", () => setLocale(select.value));
+    select.addEventListener("change", () => { void setLocale(select.value); });
   }
 
   window.BZFlagWebI18n = {
     DEFAULT_LOCALE,
+    LOCALE_CATALOGS,
     SUPPORTED_LOCALES,
     LOCALE_PACKS,
     applyTranslations,
     getLocale: () => activeLocale,
+    normaliseLocale,
     populateLocaleSelect,
     setLocale,
+    toLanguageTag,
     t: translate
   };
 
   document.addEventListener("DOMContentLoaded", () => {
     applyTranslations();
     populateLocaleSelect(document.querySelector("[data-locale-select]"));
+    void loadCatalog(activeLocale).then(() => applyTranslations());
   });
 })();
