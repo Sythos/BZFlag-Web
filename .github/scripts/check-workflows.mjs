@@ -95,6 +95,7 @@ requireMarker(ci, ".github/workflows/ci.yml", "playwright@1.52.0");
 const container = workflows.get("container.yml") || "";
 requireMarker(container, ".github/workflows/container.yml", "context: server");
 requireMarker(container, ".github/workflows/container.yml", "file: server/Dockerfile");
+requireMarker(container, ".github/workflows/container.yml", "IMAGE_NAME: ghcr.io/sythos/bzflag-web-server");
 requireMarker(container, ".github/workflows/container.yml", "validate-docker-context.mjs");
 requireMarker(container, ".github/workflows/container.yml", "push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}");
 requireMarker(container, ".github/workflows/container.yml", "load: ${{ github.event_name != 'push' }}");
@@ -113,6 +114,7 @@ requireMarker(release, ".github/workflows/release.yml", "node .github/scripts/ch
 requireMarker(release, ".github/workflows/release.yml", "needs:\n      - validate-ref\n      - verify");
 requireMarker(release, ".github/workflows/release.yml", "context: server");
 requireMarker(release, ".github/workflows/release.yml", "file: server/Dockerfile");
+requireMarker(release, ".github/workflows/release.yml", "IMAGE_NAME: ghcr.io/sythos/bzflag-web-server");
 requireMarker(release, ".github/workflows/release.yml", "node --check");
 requireMarker(release, ".github/workflows/release.yml", "node .github/scripts/check-readmes.mjs");
 requireMarker(release, ".github/workflows/release.yml", "validate-docker-context.mjs");
