@@ -347,7 +347,7 @@ jobs:
       - validate-ref
       - package
       - image
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && startsWith(inputs.tag, 'v'))
     runs-on: ubuntu-24.04
     environment: release
     permissions:
@@ -400,7 +400,7 @@ jobs:
               exit 1
             fi
           done
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             tag_object="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" --jq '.object.sha')"
             tag_type="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" --jq '.object.type')"
             if [[ "$tag_type" == "tag" ]]; then
@@ -410,9 +410,10 @@ jobs:
               echo "Existing GitHub release tag does not point to the validated commit." >&2
               exit 1
             fi
-            gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
+            gh release upload "$RELEASE_TAG" "${assets[@]}" --repo "$GITHUB_REPOSITORY" --clobber
           else
             gh release create "$RELEASE_TAG" "${assets[@]}" \
+              --repo "$GITHUB_REPOSITORY" \
               --verify-tag \
               --title "BZFlag Web Client $RELEASE_TAG" \
               --generate-notes
@@ -421,7 +422,7 @@ jobs:
   image:
     name: Publish gateway image to GHCR
     needs: package
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && startsWith(inputs.tag, 'v'))
     runs-on: ubuntu-24.04
     environment: release
     permissions:

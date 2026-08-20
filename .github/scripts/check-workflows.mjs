@@ -149,6 +149,8 @@ requireMarker(release, ".github/workflows/release.yml", "timeout 12m npx --prefi
 requireMarker(release, ".github/workflows/release.yml", "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a");
 requireMarker(release, ".github/workflows/release.yml", "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c");
 requireMarker(release, ".github/workflows/release.yml", "actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8");
+requireMarker(release, ".github/workflows/release.yml", "gh release view \"$RELEASE_TAG\" --repo \"$GITHUB_REPOSITORY\"");
+requireMarker(release, ".github/workflows/release.yml", "--repo \"$GITHUB_REPOSITORY\" --clobber");
 const security = workflows.get("security.yml") || "";
 requireMarker(security, ".github/workflows/security.yml", "github/codeql-action/init@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd");
 requireMarker(security, ".github/workflows/security.yml", "github/codeql-action/analyze@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd");
