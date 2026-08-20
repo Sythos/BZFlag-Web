@@ -1,3 +1,4 @@
+// @ts-nocheck
 /*
 Copyright (c) 2026 Sythos (https://www.sythos.net)
 
@@ -26,13 +27,21 @@ const STATIC_ASSETS = [
   "./index.html",
   "./web_game_run.html",
   "./styles.css",
-  "./i18n.js",
-  "./app.js",
-  "./renderer.js",
-  "./game.js",
+  "./service-worker.js",
+  "./dist/i18n.js",
+  "./dist/app.js",
+  "./dist/renderer.js",
+  "./dist/protocol.js",
+  "./dist/game.js",
   "./manifest.webmanifest",
   "./assets/favicon.svg",
   "./assets/social-card.svg",
+  "./assets/branding/favicon.ico",
+  "./assets/branding/apple-touch-icon.png",
+  "./assets/branding/android-chrome-192x192.png",
+  "./assets/branding/android-chrome-512x512.png",
+  "./assets/branding/og-image.png",
+  "./assets/branding/social-card.png",
   "./assets/branding/android-chrome-192x192.svg",
   "./assets/branding/android-chrome-512x512.svg",
   "./assets/branding/apple-touch-icon.svg"

@@ -1,5 +1,5 @@
 {
-  "_license": "MIT - Copyright (c) 2026 Sythos (https://www.sythos.net). See LICENSE-MIT.",
+  "_license": "MIT - Copyright (c) 2026 Sythos (https://www.sythos.net). The complete MIT text is in ../LICENSE-MIT.",
   "host": "127.0.0.1",
   "port": 8080,
   "bridgePath": "/bridge",
@@ -32,7 +32,14 @@
     "maxBytesPerSecond": 8388608,
     "maxSessions": 128,
     "maxSessionsPerIp": 4,
-    "idleTimeoutMs": 900000
+    "idleTimeoutMs": 900000,
+    "handshakeTimeoutMs": 10000,
+    "parserTimeoutMs": 30000,
+    "maxFramesPerSecond": 240,
+    "maxControlFramesPerSecond": 60,
+    "maxContinuationFrames": 16,
+    "maxContinuationBytes": 1048576
   },
-  "trustProxy": false
+  "trustProxy": false,
+  "trustedProxyPeers": []
 }

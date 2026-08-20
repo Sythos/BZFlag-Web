@@ -12,6 +12,7 @@ import { join, extname, relative } from "node:path";
 
 const failures = [];
 const rootFiles = ["COPYING", "COPYING.LGPL", "COPYING.MPL", "LICENSE-MIT"];
+const metadataFiles = ["package.json", "client/package.json", "client/manifest.webmanifest", "server/config.example.json"];
 
 const exists = async (path) => {
   try {
@@ -26,6 +27,32 @@ for (const file of rootFiles) {
   if (!(await exists(file))) {
     failures.push(`missing required license file: ${file}`);
   }
+}
+
+for (const file of metadataFiles) {
+  if (!(await exists(file))) {
+    failures.push(`missing required project metadata: ${file}`);
+    continue;
+  }
+  let metadata;
+  try {
+    metadata = JSON.parse(await readFile(file, "utf8"));
+  } catch (error) {
+    failures.push(`${file}: invalid JSON (${error.message})`);
+    continue;
+  }
+  const source = JSON.stringify(metadata).toLowerCase();
+  if (!source.includes("mit")) failures.push(`${file}: missing MIT license metadata`);
+  if (!source.includes("sythos") || !source.includes("sythos.net")) {
+    failures.push(`${file}: missing Sythos attribution metadata`);
+  }
+  if (file.endsWith("package.json") && metadata.license !== "MIT") {
+    failures.push(`${file}: new package metadata must declare license MIT`);
+  }
+}
+
+if (!(await exists("client/assets/upstream/README.md"))) {
+  failures.push("client/assets/upstream/README.md: missing upstream asset provenance manifest");
 }
 
 if (await exists("README.md")) {
@@ -61,7 +88,7 @@ for (const file of requiredCredits) {
   }
 }
 
-const sourceExtensions = new Set([".c", ".cc", ".cpp", ".cxx", ".h", ".hpp", ".js", ".mjs", ".ts", ".tsx", ".css", ".html", ".sh"]);
+const sourceExtensions = new Set([".c", ".cc", ".cpp", ".cxx", ".h", ".hpp", ".js", ".mjs", ".ts", ".tsx", ".css", ".html", ".sh", ".yml", ".yaml", ".json", ".webmanifest"]);
 const ignoredDirectories = new Set(["node_modules", "dist", "build", "vendor", "assets", "static"]);
 
 async function inspectTree(directory) {
@@ -94,6 +121,7 @@ async function inspectTree(directory) {
 
 await inspectTree("server");
 await inspectTree("client");
+await inspectTree(".github");
 
 if (failures.length > 0) {
   console.error(failures.join("\n"));

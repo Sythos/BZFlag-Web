@@ -27,9 +27,14 @@ The web subset is derived from the BZFlag project:
 
 Files copied or adapted from upstream retain their original license headers and
 applicable LGPL-2.1/MPL-2.0 terms.  If a derived file is modified for the web
-client, the change is attributed to Sythos in the file's existing header without
-removing or replacing the upstream notice.  A copied file that has not been
-modified is kept unchanged.
+client, add only the following co-author indication to its existing header:
+
+```text
+Co-author: Sythos (https://www.sythos.net)
+```
+
+Do not remove or replace the upstream notice or license.  A copied file that
+has not been modified is kept unchanged.
 
 ## Third-party material
 
@@ -48,4 +53,3 @@ For visible web-page credits use:
 
 The upstream version in this example must be updated together with the release
 metadata when the compatibility baseline changes.
-

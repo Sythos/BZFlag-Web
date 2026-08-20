@@ -25,8 +25,12 @@ import { createSocket } from 'node:dgram';
 import { existsSync, readFileSync } from 'node:fs';
 import { createServer as createHttpServer } from 'node:http';
 import { createServer as createHttpsServer } from 'node:https';
-import { createConnection } from 'node:net';
+import { createConnection, isIP } from 'node:net';
 import { fileURLToPath } from 'node:url';
+import type { Socket } from 'node:net';
+import type { AddressInfo } from 'node:net';
+import type { RemoteInfo, Socket as DatagramSocket } from 'node:dgram';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 
 export const GATEWAY_VERSION = '0.1.0';
 export const DEFAULT_BZFLAG_VERSION = '2.4.31';
@@ -39,7 +43,83 @@ const WEBSOCKET_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 const DEFAULT_MAX_FRAME_BYTES = 1024 * 1024;
 const DEFAULT_MAX_BUFFERED_BYTES = 4 * 1024 * 1024;
 const DEFAULT_MAX_UDP_BYTES = 65507;
-const INDEX_HTML_PATH = fileURLToPath(new URL('./index.html', import.meta.url));
+const INDEX_HTML_PATHS = [
+  fileURLToPath(new URL('./index.html', import.meta.url)),
+  fileURLToPath(new URL('../index.html', import.meta.url)),
+];
+
+type BridgeChannel = typeof CHANNEL_TCP | typeof CHANNEL_UDP;
+
+interface ServerTarget {
+  id: string;
+  host: string;
+  port: number;
+  udpPort: number;
+  kind: 'official' | 'custom';
+  enabled: boolean;
+  protocolVersion: string;
+  bzflagVersion: string;
+  label: string;
+}
+
+interface GatewayLimits {
+  maxFrameBytes: number;
+  maxBufferedBytes: number;
+  maxMessagesPerSecond: number;
+  maxBytesPerSecond: number;
+  maxSessions: number;
+  maxSessionsPerIp: number;
+  idleTimeoutMs: number;
+  handshakeTimeoutMs: number;
+  parserTimeoutMs: number;
+  maxFramesPerSecond: number;
+  maxControlFramesPerSecond: number;
+  maxContinuationFrames: number;
+  maxContinuationBytes: number;
+}
+
+interface TlsConfig {
+  keyFile?: string;
+  certFile?: string;
+}
+
+interface GatewayConfig {
+  host: string;
+  port: number;
+  bridgePath: string;
+  healthPath: string;
+  allowedOrigins: string[];
+  allowCustomServers: boolean;
+  protocolVersion: string;
+  bzflagVersion: string;
+  servers: ServerTarget[];
+  limits: GatewayLimits;
+  trustProxy: boolean;
+  trustedProxyPeers: string[];
+  sessionToken?: string;
+  tls?: TlsConfig | null;
+  configPath?: string | null;
+}
+
+interface BridgeMessage {
+  channel: BridgeChannel;
+  payload: Buffer;
+  legacy: boolean;
+}
+
+interface Gateway {
+  config: GatewayConfig;
+  server: ReturnType<typeof createHttpServer>;
+  sessions: Set<GatewaySession>;
+  sessionsByIp: Map<string, number>;
+  heartbeat: ReturnType<typeof setInterval> | null;
+  incrementIp(ip: string): void;
+  decrementIp(ip: string): void;
+  findServer(id: string): ServerTarget | null;
+  health(): Record<string, string | number>;
+  start(): Promise<AddressInfo>;
+  stop(): Promise<void>;
+}
 
 const MIT_LICENSE = [
   'Copyright (c) 2026 Sythos (https://www.sythos.net)',
@@ -63,7 +143,7 @@ const MIT_LICENSE = [
   'SOFTWARE.',
 ].join('\n');
 
-export const DEFAULT_CONFIG = Object.freeze({
+export const DEFAULT_CONFIG: Omit<GatewayConfig, 'sessionToken' | 'tls' | 'configPath'> = Object.freeze({
   host: '127.0.0.1',
   port: 8080,
   bridgePath: '/bridge',
@@ -81,20 +161,28 @@ export const DEFAULT_CONFIG = Object.freeze({
     maxSessions: 128,
     maxSessionsPerIp: 4,
     idleTimeoutMs: 15 * 60 * 1000,
+    handshakeTimeoutMs: 10 * 1000,
+    parserTimeoutMs: 30 * 1000,
+    maxFramesPerSecond: 240,
+    maxControlFramesPerSecond: 60,
+    maxContinuationFrames: 16,
+    maxContinuationBytes: DEFAULT_MAX_FRAME_BYTES,
   },
   trustProxy: false,
+  trustedProxyPeers: [],
 });
 
-function cloneDefaultConfig() {
+function cloneDefaultConfig(): GatewayConfig {
   return {
     ...DEFAULT_CONFIG,
     allowedOrigins: [...DEFAULT_CONFIG.allowedOrigins],
     servers: [],
     limits: { ...DEFAULT_CONFIG.limits },
+    trustedProxyPeers: [],
   };
 }
 
-function readJsonFile(path) {
+function readJsonFile(path: string): Record<string, any> {
   if (!path) {
     return {};
   }
@@ -103,12 +191,12 @@ function readJsonFile(path) {
   }
   try {
     return JSON.parse(readFileSync(path, 'utf8'));
-  } catch (error) {
+  } catch (error: any) {
     throw new Error(`Unable to parse configuration file ${path}: ${error.message}`);
   }
 }
 
-function asPositiveInteger(value, fallback, name) {
+function asPositiveInteger(value: unknown, fallback: number, name: string): number {
   if (value === undefined || value === null || value === '') {
     return fallback;
   }
@@ -119,7 +207,7 @@ function asPositiveInteger(value, fallback, name) {
   return parsed;
 }
 
-function normalizeOrigins(origins) {
+function normalizeOrigins(origins: unknown): string[] {
   if (!Array.isArray(origins) || origins.length === 0) {
     throw new Error('allowedOrigins must contain at least one origin');
   }
@@ -143,7 +231,18 @@ function normalizeOrigins(origins) {
   });
 }
 
-function normalizeServer(server, index) {
+function normalizeProxyPeers(peers: unknown): string[] {
+  if (peers === undefined || peers === null) return [];
+  if (!Array.isArray(peers)) throw new Error('trustedProxyPeers must be an array of IP addresses');
+  return peers.map((peer) => {
+    if (typeof peer !== 'string' || isIP(peer.trim()) === 0) {
+      throw new Error(`trustedProxyPeers entries must be IP addresses: ${peer}`);
+    }
+    return peer.trim();
+  });
+}
+
+function normalizeServer(server: any, index: number): ServerTarget {
   if (!server || typeof server !== 'object') {
     throw new Error(`servers[${index}] must be an object`);
   }
@@ -177,9 +276,9 @@ function normalizeServer(server, index) {
   });
 }
 
-export function normalizeConfig(input = {}) {
+export function normalizeConfig(input: Record<string, any> = {}): GatewayConfig {
   const defaults = cloneDefaultConfig();
-  const source = input && typeof input === 'object' ? input : {};
+  const source: Record<string, any> = input && typeof input === 'object' ? input : {};
   const limits = { ...defaults.limits, ...(source.limits ?? {}) };
   const config = {
     ...defaults,
@@ -203,6 +302,10 @@ export function normalizeConfig(input = {}) {
   config.allowedOrigins = normalizeOrigins(config.allowedOrigins);
   config.allowCustomServers = config.allowCustomServers === true;
   config.trustProxy = config.trustProxy === true;
+  config.trustedProxyPeers = normalizeProxyPeers(config.trustedProxyPeers);
+  if (config.trustProxy && config.trustedProxyPeers.length === 0) {
+    throw new Error('trustProxy requires at least one trustedProxyPeers IP address');
+  }
   config.protocolVersion = String(config.protocolVersion || DEFAULT_BZFLAG_PROTOCOL);
   config.bzflagVersion = String(config.bzflagVersion || DEFAULT_BZFLAG_VERSION);
   if (!Array.isArray(config.servers)) {
@@ -224,12 +327,21 @@ export function normalizeConfig(input = {}) {
     maxSessions: asPositiveInteger(limits.maxSessions, 128, 'limits.maxSessions'),
     maxSessionsPerIp: asPositiveInteger(limits.maxSessionsPerIp, 4, 'limits.maxSessionsPerIp'),
     idleTimeoutMs: asPositiveInteger(limits.idleTimeoutMs, 15 * 60 * 1000, 'limits.idleTimeoutMs'),
+    handshakeTimeoutMs: asPositiveInteger(limits.handshakeTimeoutMs, 10 * 1000, 'limits.handshakeTimeoutMs'),
+    parserTimeoutMs: asPositiveInteger(limits.parserTimeoutMs, 30 * 1000, 'limits.parserTimeoutMs'),
+    maxFramesPerSecond: asPositiveInteger(limits.maxFramesPerSecond, 240, 'limits.maxFramesPerSecond'),
+    maxControlFramesPerSecond: asPositiveInteger(limits.maxControlFramesPerSecond, 60, 'limits.maxControlFramesPerSecond'),
+    maxContinuationFrames: asPositiveInteger(limits.maxContinuationFrames, 16, 'limits.maxContinuationFrames'),
+    maxContinuationBytes: asPositiveInteger(limits.maxContinuationBytes, DEFAULT_MAX_FRAME_BYTES, 'limits.maxContinuationBytes'),
   };
   if (config.limits.maxFrameBytes < 1024) {
     throw new Error('limits.maxFrameBytes must be at least 1024');
   }
   if (config.limits.maxSessionsPerIp > config.limits.maxSessions) {
     config.limits.maxSessionsPerIp = config.limits.maxSessions;
+  }
+  if (config.limits.maxContinuationBytes > config.limits.maxFrameBytes) {
+    config.limits.maxContinuationBytes = config.limits.maxFrameBytes;
   }
   const token = config.sessionToken ?? '';
   config.sessionToken = typeof token === 'string' && token.length > 0
@@ -242,7 +354,7 @@ export function normalizeConfig(input = {}) {
   return config;
 }
 
-export function loadConfig({ path = process.env.BZFLAG_WEB_CONFIG || 'config.json', env = process.env } = {}) {
+export function loadConfig({ path = process.env.BZFLAG_WEB_CONFIG || 'config.json', env = process.env }: { path?: string; env?: NodeJS.ProcessEnv } = {}): GatewayConfig {
   const fileConfig = path && existsSync(path) ? readJsonFile(path) : {};
   const input = { ...fileConfig };
   if (env.BZFLAG_WEB_HOST) input.host = env.BZFLAG_WEB_HOST;
@@ -258,7 +370,7 @@ export function loadConfig({ path = process.env.BZFLAG_WEB_CONFIG || 'config.jso
   return config;
 }
 
-function tokenMatches(expected, received) {
+function tokenMatches(expected: string | undefined, received: string): boolean {
   if (typeof expected !== 'string' || typeof received !== 'string') return false;
   const expectedBuffer = Buffer.from(expected, 'utf8');
   const receivedBuffer = Buffer.from(received, 'utf8');
@@ -266,13 +378,13 @@ function tokenMatches(expected, received) {
   return timingSafeEqual(expectedBuffer, receivedBuffer);
 }
 
-export function isOriginAllowed(origin, allowedOrigins) {
+export function isOriginAllowed(origin: unknown, allowedOrigins: string[]): boolean {
   if (typeof origin !== 'string' || origin.length === 0) return false;
   if (allowedOrigins.includes('*')) return true;
   return allowedOrigins.includes(origin);
 }
 
-export function encodeBridgeMessage(channel, payload, maxFrameBytes = DEFAULT_MAX_FRAME_BYTES) {
+export function encodeBridgeMessage(channel: BridgeChannel, payload: Buffer | Uint8Array | string, maxFrameBytes = DEFAULT_MAX_FRAME_BYTES): Buffer {
   if (channel !== CHANNEL_TCP && channel !== CHANNEL_UDP) {
     throw new Error(`Unsupported bridge channel: ${channel}`);
   }
@@ -289,7 +401,7 @@ export function encodeBridgeMessage(channel, payload, maxFrameBytes = DEFAULT_MA
   return message;
 }
 
-export function decodeBridgeMessage(input, maxFrameBytes = DEFAULT_MAX_FRAME_BYTES) {
+export function decodeBridgeMessage(input: Buffer | Uint8Array | string, maxFrameBytes = DEFAULT_MAX_FRAME_BYTES): BridgeMessage {
   const message = Buffer.isBuffer(input) ? input : Buffer.from(input);
   if (message.length > maxFrameBytes) {
     throw new Error('WebSocket message exceeds the configured frame limit');
@@ -307,7 +419,7 @@ export function decodeBridgeMessage(input, maxFrameBytes = DEFAULT_MAX_FRAME_BYT
   return { channel, payload: message.subarray(8), legacy: false };
 }
 
-function splitBuffer(buffer, size) {
+function splitBuffer(buffer: Buffer, size: number): Buffer[] {
   const chunks = [];
   for (let offset = 0; offset < buffer.length; offset += size) {
     chunks.push(buffer.subarray(offset, Math.min(offset + size, buffer.length)));
@@ -315,7 +427,7 @@ function splitBuffer(buffer, size) {
   return chunks;
 }
 
-function websocketFrame(payload, opcode = 2) {
+function websocketFrame(payload: Buffer | Uint8Array | string, opcode = 2): Buffer {
   const body = Buffer.isBuffer(payload) ? payload : Buffer.from(payload);
   let header;
   if (body.length < 126) {
@@ -334,7 +446,7 @@ function websocketFrame(payload, opcode = 2) {
   return Buffer.concat([header, body]);
 }
 
-function websocketCloseFrame(code, reason = '') {
+function websocketCloseFrame(code: number, reason = ''): Buffer {
   const reasonBuffer = Buffer.from(String(reason), 'utf8').subarray(0, 123);
   const body = Buffer.allocUnsafe(2 + reasonBuffer.length);
   body.writeUInt16BE(code, 0);
@@ -342,36 +454,151 @@ function websocketCloseFrame(code, reason = '') {
   return websocketFrame(body, 8);
 }
 
+class FrameBudget {
+  private readonly maxFramesPerSecond: number;
+  private readonly maxControlFramesPerSecond: number;
+  private windowStarted: number;
+  private frames: number;
+  private controlFrames: number;
+
+  constructor(maxFramesPerSecond: number, maxControlFramesPerSecond: number) {
+    this.maxFramesPerSecond = maxFramesPerSecond;
+    this.maxControlFramesPerSecond = maxControlFramesPerSecond;
+    this.windowStarted = Date.now();
+    this.frames = 0;
+    this.controlFrames = 0;
+  }
+
+  consume(control: boolean): void {
+    const now = Date.now();
+    if (now - this.windowStarted >= 1000) {
+      this.windowStarted = now;
+      this.frames = 0;
+      this.controlFrames = 0;
+    }
+    if (this.frames + 1 > this.maxFramesPerSecond) {
+      const error: Error & { code?: string } = new Error('WebSocket frame rate limit exceeded');
+      error.code = 'WS_BUDGET';
+      throw error;
+    }
+    if (control && this.controlFrames + 1 > this.maxControlFramesPerSecond) {
+      const error: Error & { code?: string } = new Error('WebSocket control-frame rate limit exceeded');
+      error.code = 'WS_BUDGET';
+      throw error;
+    }
+    this.frames += 1;
+    if (control) this.controlFrames += 1;
+  }
+}
+
 export class WebSocketConnection {
-  constructor(socket, { maxFrameBytes, maxBufferedBytes, onMessage, onClose }) {
+  private readonly socket: Socket;
+  private readonly maxFrameBytes: number;
+  private readonly maxBufferedBytes: number;
+  private readonly parserTimeoutMs: number;
+  private readonly maxContinuationFrames: number;
+  private readonly maxContinuationBytes: number;
+  private readonly frameBudget: FrameBudget;
+  onMessage: ((payload: Buffer) => void) | null;
+  onClose: (() => void) | null;
+  private buffer: Buffer;
+  private fragmentBuffer: Buffer | null;
+  private fragmentFrames: number;
+  private fragmentBytes: number;
+  private parserTimer: ReturnType<typeof setTimeout> | null;
+  closed: boolean;
+  private closeSent: boolean;
+  private lastActivity: number;
+
+  constructor(socket: Socket, {
+    maxFrameBytes,
+    maxBufferedBytes,
+    parserTimeoutMs = 30 * 1000,
+    idleTimeoutMs = 15 * 60 * 1000,
+    maxFramesPerSecond = 240,
+    maxControlFramesPerSecond = 60,
+    maxContinuationFrames = 16,
+    maxContinuationBytes = maxFrameBytes,
+    onMessage,
+    onClose,
+  }: {
+    maxFrameBytes: number;
+    maxBufferedBytes: number;
+    parserTimeoutMs?: number;
+    idleTimeoutMs?: number;
+    maxFramesPerSecond?: number;
+    maxControlFramesPerSecond?: number;
+    maxContinuationFrames?: number;
+    maxContinuationBytes?: number;
+    onMessage: ((payload: Buffer) => void) | null;
+    onClose: (() => void) | null;
+  }) {
     this.socket = socket;
     this.maxFrameBytes = maxFrameBytes;
     this.maxBufferedBytes = maxBufferedBytes;
+    this.parserTimeoutMs = parserTimeoutMs;
+    this.maxContinuationFrames = maxContinuationFrames;
+    this.maxContinuationBytes = maxContinuationBytes;
+    this.frameBudget = new FrameBudget(maxFramesPerSecond, maxControlFramesPerSecond);
     this.onMessage = onMessage;
     this.onClose = onClose;
     this.buffer = Buffer.alloc(0);
     this.fragmentBuffer = null;
+    this.fragmentFrames = 0;
+    this.fragmentBytes = 0;
+    this.parserTimer = null;
     this.closed = false;
     this.closeSent = false;
     this.lastActivity = Date.now();
-    socket.on('data', (chunk) => this.#onData(chunk));
+    // This is a real socket-level idle timeout. The parser deadline below is
+    // separate and is not extended by a client that drips one partial frame.
+    socket.setTimeout(idleTimeoutMs, () => this.close(1001, 'Idle timeout'));
+    socket.on('data', (chunk: Buffer | string) => this.#onData(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
     socket.on('error', () => this.#finish());
     socket.on('close', () => this.#finish());
     socket.on('timeout', () => this.close(1001, 'Idle timeout'));
   }
 
-  #onData(chunk) {
+  #onData(chunk: Buffer): void {
     if (this.closed) return;
     this.lastActivity = Date.now();
+    const parserBufferLimit = this.maxFrameBytes + 14;
+    if (this.parserTimer && this.buffer.length + chunk.length > parserBufferLimit) {
+      this.close(1009, 'WebSocket parser buffer exceeds the configured limit');
+      return;
+    }
     this.buffer = this.buffer.length === 0 ? chunk : Buffer.concat([this.buffer, chunk]);
     try {
-      this.#parseFrames();
-    } catch (error) {
-      this.close(error.code === 'WS_TOO_LARGE' ? 1009 : 1002, error.message);
+      const waitingForFrame = this.#parseFrames();
+      // A waiting parser can contain at most one frame header, mask, and the
+      // configured payload. Keep that invariant explicit so a malformed or
+      // unexpectedly coalesced partial input cannot grow without a bound.
+      if (waitingForFrame && this.buffer.length > parserBufferLimit) {
+        const error: Error & { code?: string } = new Error('WebSocket parser buffer exceeds the configured limit');
+        error.code = 'WS_TOO_LARGE';
+        throw error;
+      }
+      this.#setParserDeadline(waitingForFrame);
+    } catch (error: any) {
+      const closeCode = error.code === 'WS_TOO_LARGE' ? 1009 : error.code === 'WS_BUDGET' ? 1008 : 1002;
+      this.close(closeCode, error.message);
     }
   }
 
-  #parseFrames() {
+  #setParserDeadline(waitingForFrame: boolean): void {
+    if (this.closed || !waitingForFrame) {
+      if (this.parserTimer) clearTimeout(this.parserTimer);
+      this.parserTimer = null;
+      return;
+    }
+    if (this.parserTimer) return;
+    this.parserTimer = setTimeout(() => {
+      this.parserTimer = null;
+      this.close(1002, 'WebSocket parser deadline exceeded');
+    }, this.parserTimeoutMs);
+  }
+
+  #parseFrames(): boolean {
     while (!this.closed && this.buffer.length >= 2) {
       const first = this.buffer[0];
       const second = this.buffer[1];
@@ -384,34 +611,36 @@ export class WebSocketConnection {
       if (rsv !== 0) throw new Error('WebSocket extensions are not enabled');
       if (!masked) throw new Error('Client WebSocket frames must be masked');
       if (length === 126) {
-        if (this.buffer.length < 4) return;
+        if (this.buffer.length < 4) return true;
         length = this.buffer.readUInt16BE(2);
         headerLength = 4;
       } else if (length === 127) {
-        if (this.buffer.length < 10) return;
+        if (this.buffer.length < 10) return true;
         const extendedLength = this.buffer.readBigUInt64BE(2);
         if (extendedLength > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error('WebSocket frame length is too large');
         length = Number(extendedLength);
         headerLength = 10;
       }
       if (length > this.maxFrameBytes) {
-        const error = new Error('WebSocket frame exceeds the configured limit');
+        const error: Error & { code?: string } = new Error('WebSocket frame exceeds the configured limit');
         error.code = 'WS_TOO_LARGE';
         throw error;
       }
       const control = opcode >= 8;
       if (control && (!fin || length > 125)) throw new Error('Invalid WebSocket control frame');
       const frameLength = headerLength + 4 + length;
-      if (this.buffer.length < frameLength) return;
+      if (this.buffer.length < frameLength) return true;
       const mask = this.buffer.subarray(headerLength, headerLength + 4);
       const payload = Buffer.from(this.buffer.subarray(headerLength + 4, frameLength));
       this.buffer = this.buffer.subarray(frameLength);
       for (let index = 0; index < payload.length; index += 1) payload[index] ^= mask[index % 4];
+      this.frameBudget.consume(control);
       this.#handleFrame(opcode, fin, payload);
     }
+    return this.buffer.length > 0;
   }
 
-  #handleFrame(opcode, fin, payload) {
+  #handleFrame(opcode: number, fin: boolean, payload: Buffer): void {
     this.lastActivity = Date.now();
     if (opcode === 0x8) {
       if (!this.closeSent) {
@@ -431,31 +660,51 @@ export class WebSocketConnection {
     if (opcode === 0x2) {
       if (this.fragmentBuffer !== null) throw new Error('A fragmented WebSocket message is already open');
       if (fin) {
-        this.onMessage(payload);
+        this.onMessage?.(payload);
       } else {
         this.fragmentBuffer = payload;
+        this.fragmentFrames = 0;
+        this.fragmentBytes = payload.length;
+        this.#checkContinuationBytes();
       }
       return;
     }
     if (opcode === 0x0) {
       if (this.fragmentBuffer === null) throw new Error('Unexpected WebSocket continuation frame');
+      this.fragmentFrames += 1;
+      this.fragmentBytes += payload.length;
+      this.#checkContinuationBudget();
       this.fragmentBuffer = Buffer.concat([this.fragmentBuffer, payload]);
-      if (this.fragmentBuffer.length > this.maxFrameBytes) {
-        const error = new Error('Fragmented WebSocket message exceeds the configured limit');
-        error.code = 'WS_TOO_LARGE';
-        throw error;
-      }
       if (fin) {
         const completeMessage = this.fragmentBuffer;
         this.fragmentBuffer = null;
-        this.onMessage(completeMessage);
+        this.fragmentFrames = 0;
+        this.fragmentBytes = 0;
+        this.onMessage?.(completeMessage);
       }
       return;
     }
     throw new Error(`Unsupported WebSocket opcode: ${opcode}`);
   }
 
-  sendBinary(payload) {
+  #checkContinuationBudget(): void {
+    if (this.fragmentFrames > this.maxContinuationFrames) {
+      const error: Error & { code?: string } = new Error('WebSocket continuation-frame budget exceeded');
+      error.code = 'WS_BUDGET';
+      throw error;
+    }
+    this.#checkContinuationBytes();
+  }
+
+  #checkContinuationBytes(): void {
+    if (this.fragmentBytes > this.maxContinuationBytes || this.fragmentBytes > this.maxFrameBytes) {
+      const error: Error & { code?: string } = new Error('Fragmented WebSocket message exceeds the configured limit');
+      error.code = 'WS_TOO_LARGE';
+      throw error;
+    }
+  }
+
+  sendBinary(payload: Buffer): boolean {
     if (this.closed || !this.socket.writable) return false;
     const frame = websocketFrame(payload, 2);
     if (this.socket.writableLength + frame.length > this.maxBufferedBytes) {
@@ -467,7 +716,7 @@ export class WebSocketConnection {
     return true;
   }
 
-  close(code = 1000, reason = '') {
+  close(code = 1000, reason = ''): void {
     if (this.closed) return;
     this.closed = true;
     if (!this.closeSent && this.socket.writable) {
@@ -478,7 +727,9 @@ export class WebSocketConnection {
     this.#finish();
   }
 
-  #finish() {
+  #finish(): void {
+    if (this.parserTimer) clearTimeout(this.parserTimer);
+    this.parserTimer = null;
     if (!this.closed) this.closed = true;
     if (this.onClose) {
       const callback = this.onClose;
@@ -489,7 +740,13 @@ export class WebSocketConnection {
 }
 
 class RateLimiter {
-  constructor(maxMessages, maxBytes) {
+  private readonly maxMessages: number;
+  private readonly maxBytes: number;
+  private windowStarted: number;
+  private messages: number;
+  private bytes: number;
+
+  constructor(maxMessages: number, maxBytes: number) {
     this.maxMessages = maxMessages;
     this.maxBytes = maxBytes;
     this.windowStarted = Date.now();
@@ -497,7 +754,7 @@ class RateLimiter {
     this.bytes = 0;
   }
 
-  consume(bytes) {
+  consume(bytes: number): boolean {
     const now = Date.now();
     if (now - this.windowStarted >= 1000) {
       this.windowStarted = now;
@@ -512,7 +769,18 @@ class RateLimiter {
 }
 
 class GatewaySession {
-  constructor(gateway, ws, target, clientIp) {
+  private readonly gateway: Gateway;
+  private readonly ws: WebSocketConnection;
+  private readonly target: ServerTarget;
+  private readonly clientIp: string;
+  private tcp: Socket | null;
+  private udp: DatagramSocket | null;
+  private closed: boolean;
+  private lastActivity: number;
+  private readonly inboundLimiter: RateLimiter;
+  private readonly outboundLimiter: RateLimiter;
+
+  constructor(gateway: Gateway, ws: WebSocketConnection, target: ServerTarget, clientIp: string) {
     this.gateway = gateway;
     this.ws = ws;
     this.target = target;
@@ -529,35 +797,35 @@ class GatewaySession {
       gateway.config.limits.maxMessagesPerSecond,
       gateway.config.limits.maxBytesPerSecond,
     );
-    this.ws.onMessage = (payload) => this.#handleClientMessage(payload);
+    this.ws.onMessage = (payload: Buffer) => this.#handleClientMessage(payload);
     this.ws.onClose = () => this.close('websocket closed');
     gateway.sessions.add(this);
     gateway.incrementIp(clientIp);
     this.#connect();
   }
 
-  #connect() {
+  #connect(): void {
     this.tcp = createConnection({ host: this.target.host, port: this.target.port });
     this.tcp.setNoDelay(true);
     this.tcp.setTimeout(this.gateway.config.limits.idleTimeoutMs, () => this.close('TCP idle timeout'));
     this.tcp.on('connect', () => {
       this.lastActivity = Date.now();
     });
-    this.tcp.on('data', (data) => this.#sendTargetData(CHANNEL_TCP, data));
-    this.tcp.on('error', (error) => this.#fail(`TCP connection error: ${error.code || 'error'}`));
+    this.tcp.on('data', (data: Buffer) => this.#sendTargetData(CHANNEL_TCP, data));
+    this.tcp.on('error', (error: NodeJS.ErrnoException) => this.#fail(`TCP connection error: ${error.code || 'error'}`));
     this.tcp.on('close', () => {
       if (!this.closed) this.close('TCP connection closed');
     });
 
     this.udp = createSocket(this.target.host.includes(':') ? 'udp6' : 'udp4');
-    this.udp.on('message', (data) => this.#sendTargetData(CHANNEL_UDP, data));
-    this.udp.on('error', (error) => this.#fail(`UDP connection error: ${error.code || 'error'}`));
+    this.udp.on('message', (data: Buffer, _remote: RemoteInfo) => this.#sendTargetData(CHANNEL_UDP, data));
+    this.udp.on('error', (error: NodeJS.ErrnoException) => this.#fail(`UDP connection error: ${error.code || 'error'}`));
     this.udp.connect(this.target.udpPort, this.target.host, () => {
       this.lastActivity = Date.now();
     });
   }
 
-  #handleClientMessage(payload) {
+  #handleClientMessage(payload: Buffer): void {
     if (this.closed) return;
     this.lastActivity = Date.now();
     if (!this.inboundLimiter.consume(payload.length)) {
@@ -567,7 +835,7 @@ class GatewaySession {
     let message;
     try {
       message = decodeBridgeMessage(payload, this.gateway.config.limits.maxFrameBytes);
-    } catch (error) {
+    } catch (error: any) {
       this.#fail(error.message, 1003);
       return;
     }
@@ -584,7 +852,7 @@ class GatewaySession {
     }
   }
 
-  #sendTargetData(channel, data) {
+  #sendTargetData(channel: BridgeChannel, data: Buffer): void {
     if (this.closed) return;
     this.lastActivity = Date.now();
     const chunkSize = Math.max(1, this.gateway.config.limits.maxFrameBytes - 8);
@@ -597,19 +865,19 @@ class GatewaySession {
     }
   }
 
-  #fail(reason, code = 1011) {
+  #fail(reason: string, code = 1011): void {
     if (this.closed) return;
     this.ws.close(code, reason);
     this.close(reason);
   }
 
-  tick(now) {
+  tick(now: number): void {
     if (!this.closed && now - this.lastActivity > this.gateway.config.limits.idleTimeoutMs) {
       this.#fail('Session idle timeout', 1001);
     }
   }
 
-  close(reason = 'closed') {
+  close(reason = 'closed'): void {
     if (this.closed) return;
     this.closed = true;
     if (this.tcp && !this.tcp.destroyed) this.tcp.destroy();
@@ -626,15 +894,26 @@ class GatewaySession {
   }
 }
 
-function clientIpForRequest(request, trustProxy) {
-  if (trustProxy) {
-    const forwarded = request.headers['x-forwarded-for'];
-    if (typeof forwarded === 'string' && forwarded.split(',')[0].trim()) return forwarded.split(',')[0].trim();
+function canonicalizeIp(address: unknown): string {
+  const candidate = typeof address === 'string' ? address.trim() : '';
+  // Node can expose an IPv4 peer as an IPv4-mapped IPv6 address. Keep the
+  // allowlist ergonomic without accepting hostnames or arbitrary strings.
+  if (candidate.startsWith('::ffff:') && isIP(candidate) === 6 && isIP(candidate.slice(7)) === 4) {
+    return candidate.slice(7);
   }
-  return request.socket.remoteAddress || 'unknown';
+  return candidate;
 }
 
-function writeHttpResponse(response, statusCode, body, contentType = 'application/json; charset=utf-8') {
+function clientIpForRequest(request: IncomingMessage, config: GatewayConfig): string {
+  const directPeer = canonicalizeIp(request.socket.remoteAddress) || 'unknown';
+  if (!config.trustProxy || !config.trustedProxyPeers.includes(directPeer)) return directPeer;
+  const forwarded = request.headers['x-forwarded-for'];
+  if (typeof forwarded !== 'string') return directPeer;
+  const firstForwarded = canonicalizeIp(forwarded.split(',')[0]);
+  return isIP(firstForwarded) !== 0 ? firstForwarded : directPeer;
+}
+
+function writeHttpResponse(response: ServerResponse, statusCode: number, body: string, contentType = 'application/json; charset=utf-8'): void {
   response.writeHead(statusCode, {
     'content-type': contentType,
     'cache-control': 'no-store',
@@ -644,7 +923,7 @@ function writeHttpResponse(response, statusCode, body, contentType = 'applicatio
   response.end(body);
 }
 
-function rejectUpgrade(socket, statusCode, message) {
+function rejectUpgrade(socket: Socket, statusCode: number, message: string): void {
   const body = `${message}\n`;
   socket.end([
     `HTTP/1.1 ${statusCode} ${statusCode === 400 ? 'Bad Request' : statusCode === 403 ? 'Forbidden' : 'Not Found'}`,
@@ -656,28 +935,46 @@ function rejectUpgrade(socket, statusCode, message) {
   ].join('\r\n'));
 }
 
-function websocketAccept(key) {
+function websocketAccept(key: string): string {
   return createHash('sha1').update(`${key}${WEBSOCKET_GUID}`).digest('base64');
 }
 
-function hasUpgradeHeader(value) {
+function hasUpgradeHeader(value: unknown): boolean {
   return typeof value === 'string' && value.split(',').some((part) => part.trim().toLowerCase() === 'upgrade');
 }
 
-function serveHome(response) {
-  const body = existsSync(INDEX_HTML_PATH)
-    ? readFileSync(INDEX_HTML_PATH, 'utf8')
+function serveHome(response: ServerResponse): void {
+  const indexPath = INDEX_HTML_PATHS.find((path) => existsSync(path));
+  const body = indexPath
+    ? readFileSync(indexPath, 'utf8')
     : '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>BZFlag Web Gateway</title></head><body><h1>BZFlag Web Gateway</h1><p>The gateway is running. Open the web client and configure its bridge URL.</p></body></html>';
   writeHttpResponse(response, 200, body, 'text/html; charset=utf-8');
 }
 
-export function createGateway(inputConfig = {}) {
+export function createGateway(inputConfig: Record<string, any> = {}): Gateway {
   const config = normalizeConfig(inputConfig);
   const tlsOptions = config.tls && config.tls.keyFile && config.tls.certFile
     ? { key: readFileSync(config.tls.keyFile), cert: readFileSync(config.tls.certFile) }
     : null;
   const server = tlsOptions ? createHttpsServer(tlsOptions) : createHttpServer();
-  const gateway = {
+  // Node's HTTP parser enforces the header deadline, while the explicit
+  // connection timer also covers a client that never completes an upgrade
+  // request at all. Both timers are cleared as soon as headers are parsed.
+  server.headersTimeout = config.limits.handshakeTimeoutMs;
+  server.requestTimeout = config.limits.handshakeTimeoutMs;
+  const handshakeTimers = new WeakMap<Socket, ReturnType<typeof setTimeout>>();
+  const clearHandshakeDeadline = (socket: Socket): void => {
+    const timer = handshakeTimers.get(socket);
+    if (timer) clearTimeout(timer);
+    handshakeTimers.delete(socket);
+  };
+  server.on('connection', (socket: Socket) => {
+    const timer = setTimeout(() => socket.destroy(), config.limits.handshakeTimeoutMs);
+    timer.unref?.();
+    handshakeTimers.set(socket, timer);
+    socket.once('close', () => clearHandshakeDeadline(socket));
+  });
+  const gateway: Gateway = {
     config,
     server,
     sessions: new Set(),
@@ -704,9 +1001,9 @@ export function createGateway(inputConfig = {}) {
         allowlistedServers: this.config.servers.filter((serverEntry) => serverEntry.enabled).length,
       };
     },
-    start() {
+    start(): Promise<AddressInfo> {
       return new Promise((resolve, reject) => {
-        const onError = (error) => {
+        const onError = (error: Error) => {
           server.off('listening', onListening);
           reject(error);
         };
@@ -717,14 +1014,16 @@ export function createGateway(inputConfig = {}) {
             for (const session of this.sessions) session.tick(now);
           }, Math.min(30_000, Math.max(1_000, Math.floor(this.config.limits.idleTimeoutMs / 2))));
           this.heartbeat.unref?.();
-          resolve(server.address());
+          const address = server.address();
+          if (!address || typeof address === 'string') return reject(new Error('Gateway listener address is unavailable'));
+          resolve(address);
         };
         server.once('error', onError);
         server.once('listening', onListening);
         server.listen(this.config.port, this.config.host);
       });
     },
-    stop() {
+    stop(): Promise<void> {
       if (this.heartbeat) clearInterval(this.heartbeat);
       for (const session of [...this.sessions]) session.close('Gateway shutdown');
       return new Promise((resolve) => {
@@ -734,7 +1033,8 @@ export function createGateway(inputConfig = {}) {
     },
   };
 
-  server.on('request', (request, response) => {
+  server.on('request', (request: IncomingMessage, response: ServerResponse) => {
+    clearHandshakeDeadline(request.socket);
     let url;
     try {
       url = new URL(request.url || '/', 'http://gateway.invalid');
@@ -748,7 +1048,8 @@ export function createGateway(inputConfig = {}) {
     return writeHttpResponse(response, 404, JSON.stringify({ error: 'Not found' }));
   });
 
-  server.on('upgrade', (request, socket) => {
+  server.on('upgrade', (request: IncomingMessage, socket: Socket) => {
+    clearHandshakeDeadline(socket);
     let url;
     try {
       url = new URL(request.url || '/', 'http://gateway.invalid');
@@ -770,7 +1071,7 @@ export function createGateway(inputConfig = {}) {
     const target = gateway.findServer(targetId);
     if (!target) return rejectUpgrade(socket, 403, 'Server is not allowlisted');
     if (target.kind === 'custom' && !config.allowCustomServers) return rejectUpgrade(socket, 403, 'Custom servers are disabled');
-    const clientIp = clientIpForRequest(request, config.trustProxy);
+    const clientIp = clientIpForRequest(request, config);
     if (gateway.sessions.size >= config.limits.maxSessions) return rejectUpgrade(socket, 503, 'Gateway session limit reached');
     if ((gateway.sessionsByIp.get(clientIp) || 0) >= config.limits.maxSessionsPerIp) return rejectUpgrade(socket, 429, 'Client session limit reached');
 
@@ -787,6 +1088,12 @@ export function createGateway(inputConfig = {}) {
     const ws = new WebSocketConnection(socket, {
       maxFrameBytes: config.limits.maxFrameBytes,
       maxBufferedBytes: config.limits.maxBufferedBytes,
+      parserTimeoutMs: config.limits.parserTimeoutMs,
+      idleTimeoutMs: config.limits.idleTimeoutMs,
+      maxFramesPerSecond: config.limits.maxFramesPerSecond,
+      maxControlFramesPerSecond: config.limits.maxControlFramesPerSecond,
+      maxContinuationFrames: config.limits.maxContinuationFrames,
+      maxContinuationBytes: config.limits.maxContinuationBytes,
       onMessage: null,
       onClose: null,
     });
@@ -800,18 +1107,15 @@ export function buildLicenseText() {
   return MIT_LICENSE;
 }
 
-function printStartup(config, address) {
+function printStartup(config: GatewayConfig, address: AddressInfo): void {
   const protocol = config.tls ? 'https' : 'http';
   const tokenSource = process.env.BZFLAG_WEB_SESSION_TOKEN ? 'environment' : config.configPath ? 'configuration file' : 'generated at startup';
   console.log(`BZFlag Web Gateway ${GATEWAY_VERSION} listening on ${protocol}://${address.address}:${address.port}`);
   console.log(`Allowlisted servers: ${config.servers.filter((server) => server.enabled).map((server) => server.id).join(', ') || 'none'}`);
   console.log(`Session token source: ${tokenSource}`);
-  if (!process.env.BZFLAG_WEB_SESSION_TOKEN && !config.configPath) {
-    console.log(`Session token (set BZFLAG_WEB_SESSION_TOKEN for a stable value): ${config.sessionToken}`);
-  }
 }
 
-export async function main(argv = process.argv.slice(2)) {
+export async function main(argv: string[] = process.argv.slice(2)): Promise<Gateway> {
   const configFlagIndex = argv.indexOf('--config');
   const configPath = configFlagIndex >= 0 ? argv[configFlagIndex + 1] : undefined;
   if (configFlagIndex >= 0 && !configPath) throw new Error('--config requires a file path');

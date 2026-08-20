@@ -11,11 +11,11 @@ Copyright (c) 2026 Sythos (https://www.sythos.net)
 [![Last commit](https://img.shields.io/github/last-commit/Sythos/BZFlag-Web)](https://github.com/Sythos/BZFlag-Web/commits/main/)
 [![Downloads](https://img.shields.io/github/downloads/Sythos/BZFlag-Web/total)](https://github.com/Sythos/BZFlag-Web/releases)
 
-BZFlag Web Client is a browser-facing implementation of the BZFlag client
+BZFlag Web Client is a browser-facing MVP/prototype of the BZFlag client
 boundary.  It combines a static HTML5 client with a small Node.js gateway so
-that a modern browser can communicate with an official BZFlag server while the
-server continues to speak its normal BZFlag protocol.  The web repository is a
-deliberately small, publishable subset of the much larger upstream BZFlag
+that the web client can be developed against an official BZFlag server while
+the server continues to speak its normal BZFlag protocol.  The web repository
+is a deliberately small, publishable subset of the much larger upstream BZFlag
 source tree; it contains only the assets and derived components needed by the
 gateway and the browser client.
 
@@ -27,27 +27,39 @@ upstream version.  Visible client and gateway pages identify the referenced
 server release as `[BZFS 2.4.31]` so that a player can distinguish the web
 package version from the protocol baseline.
 
+> **Current status — MVP/prototype.** Version `0.1.0` currently provides the
+> connection form, session handoff, initial keyboard/audio controls, bounded
+> WebSocket bridge framing and WebGPU/WebGL2 capability preview.  It is not yet
+> a full playable BZFlag client: complete world simulation, native protocol and
+> gameplay parity, integrated game media, and verified official-server
+> interoperability remain implementation milestones.  The documentation below
+> describes the target architecture as well as the current boundary; it is not
+> a claim that every target feature is already complete.
+
 ## What the server and client do together
 
-The client is a normal web application: `client/index.html` collects the
+The target client is a normal web application: `client/index.html` collects the
 nickname and connection preferences, and `client/web_game_run.html` hosts the
-actual game session.  The session uses the same essential game concepts as the
-native client—world state, tanks, shots, flags, teams, chat, scoreboard,
-keyboard commands and audio—but renders them using browser APIs.  The client
-first asks the browser for WebGPU.  Browsers without a usable WebGPU adapter
-use the WebGL2 renderer instead.  Both renderers share the same world model,
-input layer, asset pipeline and network session, so changing renderer does not
-change the server connection.
+independent game window.  In the current MVP, that window wires session state,
+initial input/audio controls, bridge framing and a renderer capability preview;
+it does not yet implement the complete native game loop.  The target session
+will cover the same essential concepts as the native client—world state,
+tanks, shots, flags, teams, chat, scoreboard, keyboard commands and audio—using
+browser APIs.  The client first asks the browser for WebGPU.  Browsers without
+a usable WebGPU adapter use the WebGL2 renderer instead.  The two renderers are
+intended to share the world model, input layer, asset pipeline and network
+session; this shared gameplay layer is still being built.
 
 The gateway is the network boundary between the browser and BZFS.  A browser
 cannot safely open the native BZFlag TCP/UDP sockets directly, and a browser
-page should never be turned into a general-purpose TCP proxy.  The gateway
+page should never be turned into a general-purpose TCP proxy.  The MVP gateway
 therefore exposes only the narrow WebSocket/WSS endpoint needed by this client,
-translates that stream to the BZFlag connection, and applies policy before a
-session can reach an upstream server.  The initial release targets official
-BZFlag servers.  Custom servers are intentionally not enabled by the default
-configuration, although the gateway configuration keeps the server catalogue
-and protocol adapter extensible for a future, explicitly opted-in mode.
+applies policy before a session can reach an upstream server, and relays the
+bounded TCP/UDP bridge frames.  It is not yet a semantic translator for every
+BZFlag protocol message.  The initial configuration targets official BZFlag
+servers.  Custom servers are intentionally not enabled by default, although
+the gateway configuration keeps the server catalogue and future protocol
+adapters extensible for an explicitly opted-in mode.
 
 The normal deployment looks like this:
 
@@ -71,9 +83,11 @@ workflow and published to GitHub Container Registry when a release is made.
 
 The gateway maintains a bounded session for each browser connection.  It
 performs the browser handshake, selects a configured official server, opens the
-corresponding BZFlag connection and relays only protocol frames understood by
-the web client.  It also closes idle, malformed or over-sized sessions instead
-of forwarding unbounded data.
+corresponding BZFlag TCP/UDP connections and relays the bridge frames.  It also
+closes idle, malformed or over-sized sessions instead of forwarding unbounded
+data.  Understanding and translating the full native protocol remains a later
+client/gateway milestone; the current relay must not be read as a claim of full
+gameplay compatibility.
 
 The production configuration is allowlist-first:
 
@@ -93,9 +107,10 @@ address and a separate health check.  WSS and HTTPS are required for deployed
 PWA and WebGPU use; `localhost` is suitable for local development.
 
 The gateway is not an official BZFlag server and does not replace `bzfs`/BZFS.
-It is an adapter that preserves compatibility with the selected upstream
-server.  The protocol adapter is kept behind a small interface so that a later
-version can add a different server catalogue or an explicitly configured
+It is the MVP adapter boundary for the selected upstream server, not a promise
+that the current prototype already preserves every native client feature.  The
+protocol boundary is kept small so that a later version can add semantic
+translation, a different server catalogue or an explicitly configured
 custom-server policy without weakening the secure default.
 
 ## Client: rendering, input and media
@@ -104,26 +119,27 @@ The client is plain HTML5 with JavaScript/TypeScript and may use WebAssembly
 for isolated, performance-sensitive routines when that is measurably useful.
 It does not require a native browser plug-in.
 
-WebGPU is the preferred path.  It gives the renderer explicit modern GPU
-buffers, bind groups, pipelines and command encoders, which is a good fit for
-large batches of tank, world and effect geometry.  WebGL2 is the compatibility
-path: it uses the same scene and asset data through a conventional browser GL
-context for current Chromium, Gecko and WebKit-based browsers that do not
-expose a usable WebGPU adapter.  Capability detection happens at runtime and
-the page reports which path was selected.
+WebGPU is the preferred path.  It gives the eventual renderer explicit modern
+GPU buffers, bind groups, pipelines and command encoders, which is a good fit
+for large batches of tank, world and effect geometry.  WebGL2 is the
+compatibility path: it will use the same scene and asset data through a
+conventional browser GL context for current Chromium, Gecko and WebKit-based
+browsers that do not expose a usable WebGPU adapter.  The MVP already detects
+capabilities and reports the selected preview path; the full scene renderer is
+not complete yet.
 
-The client keeps the native command mapping as its compatibility source of
-truth.  Keyboard focus, movement, firing, jumping, chat, scoreboard and other
-commands are handled by the web input layer; the setup page includes a short
-note recommending `F11` for browser fullscreen.  Pointer-lock and touch/gamepad
-extensions can be added without changing the wire protocol.
+The client keeps the native command mapping as its intended compatibility
+source of truth.  The MVP includes the initial keyboard mapping and controls;
+complete native command coverage, pointer-lock and touch/gamepad extensions
+remain follow-up work.  The setup page includes a short note recommending
+`F11` for browser fullscreen.
 
-Audio is loaded through browser audio APIs with a user-gesture-safe startup
-path.  Sound effects, music and other media remain local assets in the client
-package when redistribution permits it, with provenance and license records
-in the repository.  HTML5 video/media elements are available to the client
-media layer for the same reason: the game window is a self-contained web client
-rather than a remote desktop view.
+The MVP starts browser audio through a user-gesture-safe path and exposes basic
+audio controls.  Full sound effects, music and other game media remain target
+work; when redistribution permits them, they will stay local assets in the
+client package with provenance and license records in the repository.  HTML5
+video/media support is likewise part of the target self-contained game window,
+not a feature claim for the current preview.
 
 The setup page exposes the connection fields normally needed by a BZFlag
 client, including nickname, an allowlisted server, port and the relevant player
@@ -155,10 +171,10 @@ configuration, and set the explicit official-server allowlist.  Run the
 gateway on a private interface behind an HTTPS reverse proxy for production.
 
 Serve `client/` as static files from the same HTTPS origin listed in the
-gateway's origin allowlist.  The client README contains Apache and Nginx
-examples, local development commands, cache/PWA notes and the Docker gateway
-workflow.  Do not expose a development gateway directly to the public
-Internet.
+gateway's origin allowlist.  The [`client/README.md`](client/README.md) contains
+Apache and Nginx examples, local development commands, cache/PWA notes and the
+Docker gateway workflow.  Do not expose a development gateway directly to the
+public Internet.
 
 For release consumers, GitHub Releases provide one client archive, ZIP and
 tarball server archives, a Docker package, SHA-256 checksums, an SPDX SBOM and
@@ -174,7 +190,10 @@ performed by the build workflow without an explicit maintainer action.
 
 The upstream project remains the authority for the original BZFlag game,
 protocol and native client.  Changes that are copied or adapted from upstream
-retain their original headers and applicable license.  New web gateway,
+retain their original headers and applicable license.  A modified upstream
+file receives only a `Co-author: Sythos (https://www.sythos.net)` indication in
+its existing header; the upstream notice and license are not replaced.  New
+web gateway,
 browser-client, packaging and documentation material authored for this
 repository is MIT-licensed by Sythos; see [`LICENSE-MIT`](LICENSE-MIT),
 [`COPYING`](COPYING), [`COPYING.LGPL`](COPYING.LGPL),
@@ -203,4 +222,3 @@ exposing a gateway to the Internet.  The software is provided under its
 applicable licenses and without warranties; operators are responsible for
 security, privacy, availability, server rules and compliance with all
 applicable laws and third-party terms.
-

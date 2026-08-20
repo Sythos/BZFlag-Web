@@ -7,9 +7,9 @@
   "engines": {
     "node": ">=22.0.0"
   },
-  "license": "SEE LICENSE IN LICENSE-MIT",
+  "license": "MIT",
   "author": "Sythos (https://www.sythos.net)",
-  "x-license-header": "SPDX-License-Identifier: MIT; Copyright (c) 2026 Sythos (https://www.sythos.net)",
+  "x-license-header": "SPDX-License-Identifier: MIT; Copyright (c) 2026 Sythos (https://www.sythos.net). The complete MIT text is in LICENSE-MIT.",
   "x-upstream": {
     "project": "BZFlag",
     "version": "2.4.31",

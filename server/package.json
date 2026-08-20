@@ -2,7 +2,7 @@
   "name": "@sythos/bzflag-web-gateway",
   "version": "0.1.0",
   "private": true,
-  "description": "A dependency-free WebSocket bridge for allowlisted BZFlag servers.",
+  "description": "A WebSocket bridge with a dependency-free Node.js runtime for allowlisted BZFlag servers.",
   "type": "module",
   "license": "MIT",
   "author": "Sythos (https://www.sythos.net)",
@@ -10,8 +10,14 @@
     "node": ">=22"
   },
   "scripts": {
-    "start": "node gateway.mjs",
-    "check": "node --check gateway.mjs",
-    "test": "node gateway.test.mjs"
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/gateway.js",
+    "lint": "tsc --noEmit -p tsconfig.json",
+    "check": "tsc --noEmit -p tsconfig.json",
+    "test": "npm run build && node dist/gateway.test.js"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "^7.0.2"
   }
 }

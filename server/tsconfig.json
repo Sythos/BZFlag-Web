@@ -1,0 +1,21 @@
+{
+  "_license": "MIT - Copyright (c) 2026 Sythos (https://www.sythos.net). See LICENSE-MIT.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "rootDir": ".",
+    "outDir": "dist",
+    "strict": true,
+    "types": ["node"],
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "sourceMap": true,
+    "declaration": false,
+    "noEmitOnError": true
+  },
+  "include": [
+    "gateway.ts",
+    "gateway.test.ts"
+  ]
+}

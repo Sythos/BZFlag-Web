@@ -18,13 +18,21 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+FROM node:22-alpine AS build
+
+WORKDIR /build
+COPY package.json package-lock.json tsconfig.json gateway.ts gateway.test.ts ./
+RUN npm ci
+RUN npm run build
+
 FROM node:22-alpine
 
 ENV NODE_ENV=production \
     BZFLAG_WEB_CONFIG=/app/config.json
 
 WORKDIR /app
-COPY package.json gateway.mjs index.html LICENSE-MIT ./
+COPY package.json LICENSE-MIT index.html ./
+COPY --from=build /build/dist/gateway.js ./gateway.js
 
 USER node
 EXPOSE 8080
@@ -32,4 +40,4 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:8080/healthz').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
 
-CMD ["node", "gateway.mjs"]
+CMD ["node", "gateway.js"]

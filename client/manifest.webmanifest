@@ -12,26 +12,27 @@
   "theme_color": "#08111d",
   "icons": [
     {
-      "src": "./assets/branding/android-chrome-192x192.svg",
+      "src": "./assets/branding/android-chrome-192x192.png",
       "sizes": "192x192",
-      "type": "image/svg+xml",
+      "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "./assets/branding/android-chrome-512x512.svg",
+      "src": "./assets/branding/android-chrome-512x512.png",
       "sizes": "512x512",
-      "type": "image/svg+xml",
+      "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "./assets/favicon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
+      "src": "./assets/branding/favicon.ico",
+      "sizes": "32x32 48x48",
+      "type": "image/x-icon",
       "purpose": "any"
     }
   ],
   "author": "Sythos (https://www.sythos.net)",
   "license": "MIT",
+  "x-license-header": "Copyright (c) 2026 Sythos (https://www.sythos.net). The complete MIT text is in ../LICENSE-MIT.",
   "x-brand-source": "https://www.sythos.net",
   "x-upstream-reference": "BZFlag 2.4.31 / 59b3ef44fa4538296be8b7f5eeafc2a4e57d0b74"
 }

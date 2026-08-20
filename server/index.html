@@ -64,12 +64,14 @@
 
       <h2>Install and configure</h2>
       <pre><code>cd server
-cp config.example.json config.json
+cp ./config.example.json ./config.json
 node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
-# Put the generated value in config.json as sessionToken.
+# Put the generated value in ./config.json as sessionToken.
 # Replace the example official host with an approved BZFlag server.
+npm ci
+npm run build
 npm start</code></pre>
-      <p>On Windows PowerShell, use <code>Copy-Item config.example.json config.json</code> instead of <code>cp</code>. The gateway prints its listening address and token source at startup. A token generated automatically is intended for local development; set <code>BZFLAG_WEB_SESSION_TOKEN</code> in production.</p>
+      <p>On Windows PowerShell, use <code>Copy-Item ./config.example.json ./config.json</code> instead of <code>cp</code>. The gateway prints its listening address and token source at startup, never the bearer token itself. Set <code>BZFLAG_WEB_SESSION_TOKEN</code> or a private <code>./config.json</code> <code>sessionToken</code> in production.</p>
 
       <h2>Check the service</h2>
       <pre><code>curl http://127.0.0.1:8080/healthz</code></pre>
@@ -79,12 +81,12 @@ npm start</code></pre>
       <pre><code>docker build -t sythos/bzflag-web-gateway:local .
 docker run --rm --name bzflag-web-gateway \
   -p 8080:8080 \
-  -v "$PWD/config.json:/app/config.json:ro" \
+  -v "./config.json:/app/config.json:ro" \
   sythos/bzflag-web-gateway:local</code></pre>
       <p>Keep <code>config.json</code> outside the image so the token and allowlist are not baked into a public layer. The image contains only the gateway, not <code>bzfs</code>.</p>
 
       <h2>Reverse proxy</h2>
-      <p>Terminate TLS at Apache or Nginx and forward WebSocket upgrades to the gateway. Add the public page origin exactly (including scheme and port) to <code>allowedOrigins</code>. Do not enable <code>trustProxy</code> unless every proxy in front of this service is controlled by you.</p>
+      <p>Terminate TLS at Apache or Nginx and forward WebSocket upgrades to the gateway. Add the public page origin exactly (including scheme and port) to <code>allowedOrigins</code>. Keep <code>trustProxy</code> disabled unless every proxy in front of this service is controlled by you, and then list each direct proxy IP exactly in <code>trustedProxyPeers</code>.</p>
 
       <h2>Future custom-server support</h2>
       <p>Configuration entries already have a <code>kind</code> field and can carry per-server protocol metadata. Entries marked <code>custom</code> remain blocked while <code>allowCustomServers</code> is false. This default prevents a public gateway from becoming a general-purpose TCP/UDP proxy.</p>

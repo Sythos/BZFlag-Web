@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Sythos (https://www.sythos.net)
 
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Sythos (https://www.sythos.net)
+# The complete MIT text is in LICENSE-MIT.
+
 * text=auto eol=lf
 
 # Binary client assets must not be normalized by Git.
@@ -23,4 +27,3 @@
 *.map linguist-generated=true
 coverage/ linguist-generated=true
 reports/ linguist-generated=true
-

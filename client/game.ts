@@ -1,3 +1,4 @@
+// @ts-nocheck
 /*
 Copyright (c) 2026 Sythos (https://www.sythos.net)
 

@@ -1,3 +1,24 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Sythos (https://www.sythos.net)
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
 name: Release
 
 on:
@@ -20,19 +41,177 @@ concurrency:
 
 env:
   RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  RELEASE_BASE_BRANCH: main
 
 jobs:
+  validate-ref:
+    name: Validate release tag and ancestry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      release_tag: ${{ steps.ref.outputs.release_tag }}
+      release_commit: ${{ steps.ref.outputs.release_commit }}
+    steps:
+      - name: Checkout requested release ref
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate strict SemVer tag and main ancestry
+        id: ref
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ env.RELEASE_TAG }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
+          BASE_BRANCH: ${{ env.RELEASE_BASE_BRANCH }}
+        run: |
+          set -euo pipefail
+          semver_pattern='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+          if [[ ! "$RELEASE_TAG" =~ $semver_pattern ]]; then
+            echo "Release tag must be strict vMAJOR.MINOR.PATCH SemVer: $RELEASE_TAG" >&2
+            exit 1
+          fi
+          if [[ "$EVENT_NAME" == "push" && "$EVENT_REF" != "refs/tags/$RELEASE_TAG" ]]; then
+            echo "The push ref does not match RELEASE_TAG." >&2
+            exit 1
+          fi
+
+          tag_ref="refs/tags/$RELEASE_TAG"
+          if ! git show-ref --verify --quiet "$tag_ref"; then
+            echo "Release tag is not present in the checked-out repository: $RELEASE_TAG" >&2
+            exit 1
+          fi
+          tag_object="$(git rev-parse --verify "$tag_ref")"
+          if [[ "$(git cat-file -t "$tag_object")" != "tag" ]]; then
+            echo "Release tags must be annotated tags: $RELEASE_TAG" >&2
+            exit 1
+          fi
+          tag_commit="$(git rev-parse --verify "$tag_ref^{commit}")"
+          head_commit="$(git rev-parse --verify HEAD)"
+          if [[ "$tag_commit" != "$head_commit" ]]; then
+            echo "Checked-out HEAD does not match the release tag commit." >&2
+            exit 1
+          fi
+          if [[ "$EVENT_NAME" == "push" && "$tag_commit" != "$EVENT_SHA" ]]; then
+            echo "The event SHA does not match the release tag commit." >&2
+            exit 1
+          fi
+
+          git fetch --no-tags origin "+$BASE_BRANCH:refs/remotes/origin/$BASE_BRANCH"
+          base_ref="refs/remotes/origin/$BASE_BRANCH"
+          if ! git show-ref --verify --quiet "$base_ref"; then
+            echo "Base branch was not fetched: $BASE_BRANCH" >&2
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$tag_commit" "$base_ref"; then
+            echo "Release tag is not an ancestor of origin/$BASE_BRANCH." >&2
+            exit 1
+          fi
+
+          printf 'release_tag=%s\n' "$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          printf 'release_commit=%s\n' "$tag_commit" >> "$GITHUB_OUTPUT"
+
+  verify:
+    name: Verify release gates
+    needs: validate-ref
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      RELEASE_TAG: ${{ needs.validate-ref.outputs.release_tag }}
+      RELEASE_BASE_BRANCH: main
+    steps:
+      - name: Checkout validated release source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ needs.validate-ref.outputs.release_tag }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24.x
+          check-latest: true
+
+      - name: Fetch base branch for the ancestry gate
+        run: git fetch --no-tags origin "+$RELEASE_BASE_BRANCH:refs/remotes/origin/$RELEASE_BASE_BRANCH"
+
+      - name: Install locked TypeScript package dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          for directory in client server; do
+            test -f "$directory/package.json"
+            test -f "$directory/package-lock.json"
+            npm ci --prefix "$directory" --ignore-scripts
+          done
+
+      - name: Build TypeScript packages and verify compiled output
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run build --prefix client
+          npm run build --prefix server
+          test -d client/dist
+          test -d server/dist
+
+      - name: Run TypeScript package checks and tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          for directory in client server; do
+            npm run lint --prefix "$directory"
+            npm run typecheck --prefix "$directory"
+            npm test --prefix "$directory"
+          done
+
+      - name: Run compiled JavaScript syntax checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob globstar
+          files=(client/dist/**/*.js client/dist/**/*.mjs server/dist/**/*.js server/dist/**/*.mjs)
+          if (( ${#files[@]} == 0 )); then
+            echo "No compiled JavaScript files were found." >&2
+            exit 1
+          fi
+          for file in "${files[@]}"; do
+            node --check "$file"
+          done
+
+      - name: Verify release metadata, provenance and asset closure
+        run: node .github/scripts/verify-release.mjs --tag "$RELEASE_TAG" --base-ref "origin/$RELEASE_BASE_BRANCH"
+
+      - name: Run repository compliance checks
+        run: node .github/scripts/check-compliance.mjs
+
+      - name: Validate HTML entry points
+        run: node .github/scripts/validate-html.mjs
+
   package:
     name: Build release packages
+    needs:
+      - validate-ref
+      - verify
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       contents: read
+    env:
+      RELEASE_TAG: ${{ needs.validate-ref.outputs.release_tag }}
     steps:
       - name: Checkout tagged source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          ref: ${{ env.RELEASE_TAG }}
+          ref: ${{ needs.validate-ref.outputs.release_tag }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -59,28 +238,33 @@ jobs:
             exit 1
           fi
 
-          if [[ -f client/package-lock.json ]]; then
-            npm ci --prefix client --ignore-scripts
-          elif [[ -f client/package.json ]]; then
-            npm install --prefix client --ignore-scripts
-          fi
-          npm run build --if-present --prefix client
-
-          if [[ -f server/package-lock.json ]]; then
-            npm ci --prefix server --ignore-scripts
-          elif [[ -f server/package.json ]]; then
-            npm install --prefix server --ignore-scripts
-          fi
-          npm run build --if-present --prefix server
+          for directory in client server; do
+            if [[ ! -f "$directory/package.json" || ! -f "$directory/package-lock.json" ]]; then
+              echo "$directory requires package.json and package-lock.json for a reproducible release." >&2
+              exit 1
+            fi
+            npm ci --prefix "$directory" --ignore-scripts
+            npm run build --prefix "$directory"
+            if [[ ! -d "$directory/dist" ]]; then
+              echo "$directory build did not produce the required dist/ output." >&2
+              exit 1
+            fi
+          done
 
           cp -a client/. "release/bzflag-web-client-${version}/"
           cp -a server/. "release/bzflag-web-server-${version}/"
           rm -rf "release/bzflag-web-client-${version}/node_modules" "release/bzflag-web-server-${version}/node_modules"
 
-          for directory in "release/bzflag-web-client-${version}" "release/bzflag-web-server-${version}"; do
-            cp COPYING COPYING.LGPL COPYING.MPL LICENSE-MIT NOTICE AUTHORS "$directory/" 2>/dev/null || true
+          required_licenses=(COPYING COPYING.LGPL COPYING.MPL LICENSE-MIT NOTICE ATTRIBUTION.md AUTHORS)
+          for license_file in "${required_licenses[@]}"; do
+            if [[ ! -s "$license_file" ]]; then
+              echo "Required license/provenance file is missing or empty: $license_file" >&2
+              exit 1
+            fi
           done
-          printf 'BZFlag Web Client release %s\nUpstream reference: %s\n' "$RELEASE_TAG" "$(git rev-parse HEAD)" > release/RELEASE-MANIFEST.txt
+          for directory in "release/bzflag-web-client-${version}" "release/bzflag-web-server-${version}"; do
+            cp "${required_licenses[@]}" "$directory/"
+          done
 
           (cd release && zip -qr "bzflag-web-client-${version}.zip" "bzflag-web-client-${version}")
           (cd release && tar -czf "bzflag-web-server-${version}.tar.gz" "bzflag-web-server-${version}")
@@ -96,7 +280,7 @@ jobs:
             echo "server/Dockerfile is required for a release." >&2
             exit 1
           fi
-          docker build --pull --tag "bzflag-web-server:${version}" --file server/Dockerfile .
+          docker build --pull --tag "bzflag-web-server:${version}" --file server/Dockerfile server
           docker save "bzflag-web-server:${version}" > "release/bzflag-web-server-docker-${version}.tar"
           gzip -9 -c "release/bzflag-web-server-docker-${version}.tar" > "release/bzflag-web-server-docker-${version}.tar.gz"
           docker image inspect "bzflag-web-server:${version}" > "release/docker/image-inspect.json"
@@ -106,20 +290,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          version="${RELEASE_TAG#v}"
-          node --input-type=module <<'NODE'
-          import { writeFile } from "node:fs/promises";
-          const manifest = {
-            schema: "https://spdx.dev/schema/2.3",
-            SPDXID: "SPDXRef-DOCUMENT",
-            name: `bzflag-web-${process.env.RELEASE_TAG}`,
-            dataLicense: "CC0-1.0",
-            documentNamespace: `https://github.com/Sythos/BZFlag-Web/releases/${process.env.RELEASE_TAG}`,
-            packages: [{ SPDXID: "SPDXRef-Package-BZFlag-Web", name: "BZFlag Web Client", versionInfo: process.env.RELEASE_TAG, licenseConcluded: "MIT OR LGPL-2.1-only OR MPL-2.0" }],
-          };
-          await writeFile("release/sbom.spdx.json", `${JSON.stringify(manifest, null, 2)}\n`);
-          await writeFile("release/build-provenance.json", `${JSON.stringify({ repository: process.env.GITHUB_REPOSITORY, ref: process.env.RELEASE_TAG, commit: process.env.GITHUB_SHA, workflow: process.env.GITHUB_WORKFLOW, runId: process.env.GITHUB_RUN_ID }, null, 2)}\n`);
-          NODE
+          node .github/scripts/release-metadata.mjs --release-tag "$RELEASE_TAG" --release-dir release
           find release -maxdepth 1 -type f -print0 | sort -z | xargs -0 sha256sum > release/SHA256SUMS.txt
 
       - name: Upload release bundle for publication
@@ -132,7 +303,9 @@ jobs:
 
   publish:
     name: Publish GitHub release and GHCR image
-    needs: package
+    needs:
+      - package
+      - image
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
     environment: release
@@ -149,13 +322,6 @@ jobs:
           name: release-${{ env.RELEASE_TAG }}
           path: release
 
-      - name: Create GitHub release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          gh release create "$RELEASE_TAG" release/bzflag-web-client-*.zip release/bzflag-web-server-*.zip release/bzflag-web-server-*.tar.gz release/bzflag-web-server-docker-*.tar release/bzflag-web-server-docker-*.tar.gz release/SHA256SUMS.txt release/sbom.spdx.json release/build-provenance.json --title "BZFlag Web Client $RELEASE_TAG" --generate-notes
-
       - name: Attest client package
         uses: actions/attest-build-provenance@c074443f1aee8d4aeeae555aebba3282517141b2 # v2.2.3
         with:
@@ -165,10 +331,42 @@ jobs:
         uses: actions/attest-build-provenance@c074443f1aee8d4aeeae555aebba3282517141b2 # v2.2.3
         with:
           subject-path: |
-            release/bzflag-web-server-*.zip
-            release/bzflag-web-server-*.tar.gz
+            release/bzflag-web-server-[0-9]*.zip
+            release/bzflag-web-server-[0-9]*.tar.gz
             release/bzflag-web-server-docker-*.tar
             release/bzflag-web-server-docker-*.tar.gz
+
+      - name: Publish GitHub release after package attestations
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          assets=(
+            release/bzflag-web-client-*.zip
+            release/bzflag-web-server-[0-9]*.zip
+            release/bzflag-web-server-[0-9]*.tar.gz
+            release/bzflag-web-server-docker-*.tar
+            release/bzflag-web-server-docker-*.tar.gz
+            release/RELEASE-MANIFEST.txt
+            release/SHA256SUMS.txt
+            release/sbom.spdx.json
+            release/build-provenance.json
+          )
+          for asset in "${assets[@]}"; do
+            if [[ ! -s "$asset" ]]; then
+              echo "Release asset is missing or empty: $asset" >&2
+              exit 1
+            fi
+          done
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
+          else
+            gh release create "$RELEASE_TAG" "${assets[@]}" \
+              --verify-tag \
+              --title "BZFlag Web Client $RELEASE_TAG" \
+              --generate-notes
+          fi
 
   image:
     name: Publish gateway image to GHCR
@@ -215,7 +413,7 @@ jobs:
         id: build
         uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
         with:
-          context: .
+          context: server
           file: server/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
