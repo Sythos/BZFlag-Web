@@ -151,9 +151,12 @@ jobs:
           set -euo pipefail
           e2e_root="$RUNNER_TEMP/bzflag-web-e2e"
           mkdir -p "$e2e_root"
-          npm install --prefix "$e2e_root" --no-save --no-package-lock --ignore-scripts playwright@1.52.0
+          npm install --prefix "$e2e_root" --no-save --no-package-lock --ignore-scripts playwright@1.62.1
           export PLAYWRIGHT_BROWSERS_PATH="$e2e_root/browsers"
-          npx --prefix "$e2e_root" playwright install --with-deps chromium
+          node --version
+          npx --prefix "$e2e_root" playwright --version
+          npx --prefix "$e2e_root" playwright install --dry-run --with-deps --only-shell chromium
+          timeout 12m npx --prefix "$e2e_root" playwright install --with-deps --only-shell chromium
 
       - name: Run real browser Connect-to-game E2E
         shell: bash
