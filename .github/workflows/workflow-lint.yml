@@ -63,4 +63,7 @@ jobs:
           "$RUNNER_TEMP/zizmor-venv/bin/python" -m pip install --disable-pip-version-check --no-cache-dir "zizmor==1.11.0"
 
       - name: Run zizmor audit
-        run: "$RUNNER_TEMP/zizmor-venv/bin/zizmor" .github/workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/zizmor-venv/bin/zizmor" .github/workflows
