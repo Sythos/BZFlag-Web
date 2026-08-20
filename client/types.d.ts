@@ -53,6 +53,7 @@ interface BZFlagWebProtocolApi {
   MSG_PLAYER_UPDATE: number;
   MSG_PLAYER_UPDATE_SMALL: number;
   MSG_ALIVE: number;
+  MSG_SUPER_KILL: number;
   encodeConnectHeader?: () => Uint8Array;
   encodeEnter?: (connection?: Record<string, unknown>) => Uint8Array;
   encodeInput?: (command: string, phase: string, key: string, state?: Record<string, unknown>) => Uint8Array | null;

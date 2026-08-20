@@ -148,6 +148,7 @@ SOFTWARE.
     chatSend: "Send",
     chatSent: "Message sent.",
     chatUnavailable: "Chat is unavailable until the gateway and target are ready.",
+    serverDisconnect: "The BZFS server requested that this client disconnect.",
     previewNotice: "Renderer preview active. Server protocol messages will appear here.",
     audio: "Audio",
     audioOn: "On",

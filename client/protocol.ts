@@ -58,6 +58,7 @@
   const MSG_REMOVE_PLAYER = 0x7270;
   const MSG_SHOT_BEGIN = 0x7362;
   const MSG_SHOT_END = 0x7365;
+  const MSG_SUPER_KILL = 0x736b;
   const MSG_TELEPORT = 0x7470;
   const MSG_TRANSFER_FLAG = 0x7466;
   const MSG_TEAM_UPDATE = 0x7475;
@@ -734,7 +735,13 @@
     if (command === "new-rabbit" && phase === "start") return encodeNewRabbit();
     if (command === "teleport" && phase === "start") return encodeTeleport(state.from, state.to);
     if (command === "transfer-flag" && phase === "start") {
-      return encodeTransferFlag(state.from ?? state.playerId, state.to ?? state.targetPlayerId);
+      const localPlayerId = boundedPlayerId(state.playerId);
+      if (localPlayerId === null) return null;
+      if (state.from !== undefined && state.from !== null) {
+        const requestedSource = boundedPlayerId(state.from);
+        if (requestedSource === null || requestedSource !== localPlayerId) return null;
+      }
+      return encodeTransferFlag(localPlayerId, state.to ?? state.targetPlayerId);
     }
     if (command === "shot-end" && phase === "start") return encodeShotEnd(state);
     // Jump, scoreboard, chat opener and menu actions remain local UI/physics
@@ -963,6 +970,7 @@
       case MSG_PLAYER_UPDATE_SMALL: return decodePlayerUpdate(payload, true);
       case MSG_SHOT_BEGIN: return decodeShotBegin(payload);
       case MSG_SHOT_END: return decodeShotEnd(payload);
+      case MSG_SUPER_KILL: return toUint8Array(payload).byteLength === 0 ? {} : null;
       case MSG_FLAG_UPDATE: return decodeFlagUpdate(payload);
       case MSG_MESSAGE: return decodeMessage(payload);
       case MSG_ALIVE: return decodeAlive(payload);
@@ -1035,6 +1043,7 @@
     MSG_REMOVE_PLAYER,
     MSG_SHOT_BEGIN,
     MSG_SHOT_END,
+    MSG_SUPER_KILL,
     MSG_AUTO_PILOT,
     MSG_CAPTURE_FLAG,
     MSG_NEW_RABBIT,

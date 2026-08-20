@@ -23,6 +23,9 @@
 
 import { createWorldState } from "../dist/state.js";
 
+const MSG_PLAYER_UPDATE = 0x7075;
+const MSG_PLAYER_UPDATE_SMALL = 0x7073;
+
 function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
@@ -47,4 +50,39 @@ assert(state.snapshot().worldGeometry?.objects[0].position[0] === 4, "WorldState
 assert(state.clearWorldGeometry().applied, "WorldState did not clear decoded geometry");
 assert(state.snapshot().worldGeometry === null, "WorldState retained cleared geometry");
 
-console.log("Client state checks passed (validated world geometry application and snapshot isolation).");
+function playerUpdate(code, playerId, order, x) {
+  return {
+    code,
+    data: {
+      playerId,
+      order,
+      position: [x, 0, 0],
+      velocity: [0, 0, 0],
+      timestamp: order
+    }
+  };
+}
+
+const ordered = createWorldState({ players: 4 });
+const first = ordered.apply(playerUpdate(MSG_PLAYER_UPDATE, 7, 0, 7));
+assert(first.applied, "the first player update must be preserved even with order zero");
+assert(ordered.snapshot().players[0].position[0] === 7, "the first player update was not stored");
+const next = ordered.apply(playerUpdate(MSG_PLAYER_UPDATE_SMALL, 7, 15, 15));
+assert(next.applied, "a strictly newer small player update was rejected");
+const revisionAfterNew = ordered.snapshot().revision;
+const stale = ordered.apply(playerUpdate(MSG_PLAYER_UPDATE, 7, 14, 14));
+assert(!stale.applied && stale.reason === "stale-player-order", "an out-of-order player update was accepted");
+assert(ordered.snapshot().revision === revisionAfterNew, "a stale player update changed the world revision");
+assert(ordered.snapshot().players[0].order === 15 && ordered.snapshot().players[0].position[0] === 15, "a stale player update replaced newer state");
+const newer = ordered.apply(playerUpdate(MSG_PLAYER_UPDATE, 7, 16, 16));
+assert(newer.applied && ordered.snapshot().players[0].order === 16, "a strictly newer player update was rejected");
+const duplicate = ordered.apply(playerUpdate(MSG_PLAYER_UPDATE, 7, 16, 20));
+assert(!duplicate.applied, "an equal player order was accepted");
+const independent = ordered.apply(playerUpdate(MSG_PLAYER_UPDATE, 8, 1, 8));
+assert(independent.applied, "player order tracking was not scoped per entity");
+
+assert(ordered.apply({ code: 0x7270, data: { playerId: 7 } }).applied, "player removal was rejected");
+assert(ordered.apply({ code: 0x6170, data: { playerId: 7 } }).applied, "player rejoin was rejected");
+assert(ordered.apply(playerUpdate(MSG_PLAYER_UPDATE, 7, 0, 70)).applied, "a re-added entity did not preserve its first update");
+
+console.log("Client state checks passed (validated world geometry isolation and ordered player updates).");

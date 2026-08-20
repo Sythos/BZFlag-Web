@@ -210,6 +210,12 @@ function copyPlayer(data: StateData): PlayerState {
   };
 }
 
+function playerOrder(value: unknown): number | null {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 0x7fffffff
+    ? value
+    : null;
+}
+
 function copyShot(data: StateData): ShotState {
   return {
     playerId: boundedInteger(data.playerId, 0, 255, 0),
@@ -247,6 +253,7 @@ function clone<T>(value: T): T {
 export class WorldState {
   private readonly limits: Required<StateLimits>;
   private readonly players: Map<number, PlayerState>;
+  private readonly playerOrders: Map<number, number>;
   private readonly shots: Map<string, ShotState>;
   private readonly flags: Map<number, FlagState>;
   private readonly messages: MessageState[];
@@ -264,6 +271,7 @@ export class WorldState {
       messages: boundedInteger(options.messages, 1, DEFAULT_LIMITS.messages, DEFAULT_LIMITS.messages)
     };
     this.players = new Map();
+    this.playerOrders = new Map();
     this.shots = new Map();
     this.flags = new Map();
     this.messages = [];
@@ -303,6 +311,7 @@ export class WorldState {
     }
     const data = event.data;
     let applied = true;
+    let reason: string | undefined;
     switch (event.code) {
       case MSG_ACCEPT:
         this.connection = { phase: "accepted", accepted: true, rejected: null };
@@ -312,22 +321,38 @@ export class WorldState {
         break;
       case MSG_ADD_PLAYER: {
         if (!data || typeof data.playerId !== "number") { applied = false; break; }
-        if (!this.players.has(data.playerId) && this.players.size >= this.limits.players) { applied = false; break; }
+        const hadPlayer = this.players.has(data.playerId);
+        if (!hadPlayer && this.players.size >= this.limits.players) { applied = false; break; }
         const player = copyPlayer(data);
         this.#boundedMapInsert(this.players, player.playerId, player, this.limits.players);
+        if (!hadPlayer) this.playerOrders.delete(player.playerId);
         if (event.local) this.localPlayerId = player.playerId;
         break;
       }
       case MSG_REMOVE_PLAYER:
         if (!data || typeof data.playerId !== "number" || !this.players.delete(data.playerId)) applied = false;
+        if (data && typeof data.playerId === "number") this.playerOrders.delete(data.playerId);
         if (data && data.playerId === this.localPlayerId) this.localPlayerId = null;
         break;
       case MSG_PLAYER_UPDATE:
       case MSG_PLAYER_UPDATE_SMALL: {
         if (!data || typeof data.playerId !== "number") { applied = false; break; }
+        const order = playerOrder(data.order);
+        if (order === null) {
+          applied = false;
+          reason = "invalid-player-order";
+          break;
+        }
+        const lastOrder = this.playerOrders.get(data.playerId);
+        if (lastOrder !== undefined && order <= lastOrder) {
+          applied = false;
+          reason = "stale-player-order";
+          break;
+        }
         const player = this.#ensurePlayer(data.playerId);
         if (!player) { applied = false; break; }
         Object.assign(player, copyPlayer({ ...player, ...data }));
+        this.playerOrders.set(data.playerId, order);
         break;
       }
       case MSG_ALIVE: {
@@ -369,7 +394,7 @@ export class WorldState {
         break;
     }
     if (applied) this.#touch();
-    return { applied, code: event.code, revision: this.revision, localPlayerId: this.localPlayerId };
+    return { applied, ...(reason ? { reason } : {}), code: event.code, revision: this.revision, localPlayerId: this.localPlayerId };
   }
 
   /**

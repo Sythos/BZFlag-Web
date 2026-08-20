@@ -27,6 +27,7 @@ import { fileURLToPath } from "node:url";
 
 const source = await readFile(fileURLToPath(new URL("../dist/game.js", import.meta.url)), "utf8");
 const listeners = new Map();
+const windowListeners = new Map();
 const context = {
   ArrayBuffer,
   DataView,
@@ -43,12 +44,21 @@ const context = {
   },
   window: {
     BZFlagWebI18n: { t: (key) => key },
-    BZFlagWebProtocol: null
+    BZFlagWebProtocol: null,
+    addEventListener(type, listener) {
+      windowListeners.set(type, listener);
+    },
+    removeEventListener(type) {
+      windowListeners.delete(type);
+    }
   }
 };
 class FakeWebSocket {}
 FakeWebSocket.OPEN = 1;
 context.WebSocket = FakeWebSocket;
+context.HTMLInputElement = class HTMLInputElement {};
+context.HTMLTextAreaElement = class HTMLTextAreaElement {};
+context.HTMLSelectElement = class HTMLSelectElement {};
 context.globalThis = context;
 vm.runInNewContext(source, context, { filename: "dist/game.js" });
 
@@ -57,6 +67,7 @@ const protocol = {
   ALL_PLAYERS: 254,
   ADMIN_PLAYERS: 252,
   FIRST_TEAM: 251,
+  MSG_SUPER_KILL: 0x736b,
   TEAM_BY_NAME: { red: 1 },
   encodeInput(command, phase, key, state) {
     calls.push({ command, phase, key, state });
@@ -91,4 +102,38 @@ assert(!game.sendChatMessage(socket, protocol, { team: "red" }, "all", "x".repea
 assert(frames.length === 1 && calls.length === 1, "invalid chat submissions reached the protocol or socket");
 assert(listeners.has("DOMContentLoaded"), "game client did not retain its DOMContentLoaded bootstrap");
 
-console.log("Client chat composer checks passed (bounded targets, protocol input and TCP bridge envelope).");
+assert(game.resolveInputChannel("fire", false, true) === null, "fire was assigned a TCP fallback before UDP became ready");
+assert(game.resolveInputChannel("fire", false, false) === null, "fire was enabled when UDP was disabled");
+assert(game.resolveInputChannel("fire", true, true) === game.CHANNEL_UDP, "fire was not assigned to the UDP channel after negotiation");
+assert(game.resolveInputChannel("move-forward", false, true) === game.CHANNEL_TCP, "movement lost its pre-UDP TCP fallback");
+assert(game.acceptsServerOrder(null, 0), "the first authoritative player order was rejected");
+assert(game.acceptsServerOrder(15, 16), "a newer authoritative player order was rejected");
+assert(!game.acceptsServerOrder(15, 14), "a stale authoritative player order was accepted");
+assert(!game.acceptsServerOrder(15, 15), "a duplicate authoritative player order was accepted");
+
+context.window.BZFlagWebProtocol = protocol;
+let udpReady = false;
+const keyboardAudio = { play() {} };
+const keyboardSocket = { readyState: FakeWebSocket.OPEN, send(frame) { frames.push(frame); } };
+const stopKeyboard = game.bindKeyboard(
+  keyboardSocket,
+  keyboardAudio,
+  () => ({ firing: { playerId: 7, shotId: 1, position: [0, 0, 0], velocity: [1, 0, 0] } }),
+  (command) => game.resolveInputChannel(command, udpReady, true)
+);
+const fireDown = { code: "Enter", target: null, preventDefault() {} };
+windowListeners.get("keydown")(fireDown);
+assert(frames.length === 1, "fire emitted a frame before UDP readiness");
+assert(new Uint8Array(frames.at(-1))[5] === 0, "pre-UDP fire changed an earlier non-fire frame");
+windowListeners.get("keyup")({ code: "Enter", target: null });
+udpReady = true;
+windowListeners.get("keydown")(fireDown);
+assert(frames.length === 2, "fire was not sent after UDP readiness");
+assert(new Uint8Array(frames.at(-1))[5] === game.CHANNEL_UDP, "fire was not sent through the UDP bridge channel");
+stopKeyboard();
+
+let closeCode = null;
+game.handleProtocolFollowUp({ socket: { readyState: FakeWebSocket.OPEN, close(code) { closeCode = code; } } }, { valid: true, code: protocol.MSG_SUPER_KILL });
+assert(closeCode === 1008, "MsgSuperKill did not close the browser session");
+
+console.log("Client game checks passed (bounded chat and UDP-only fire channel).");

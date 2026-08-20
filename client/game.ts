@@ -76,6 +76,7 @@ SOFTWARE.
     flagNegotiationSent: boolean;
     udpRequested: boolean;
     udpReady: boolean;
+    serverPlayerOrder: number | null;
     queriesSent: boolean;
     settingsRequested: boolean;
     worldHashRequested: boolean;
@@ -433,6 +434,11 @@ SOFTWARE.
     return true;
   }
 
+  function acceptsServerOrder(lastOrder: number | null, nextOrder: unknown): boolean {
+    const order = Number(nextOrder);
+    return Number.isInteger(order) && order >= 0 && order <= 0x7fffffff && (lastOrder === null || order > lastOrder);
+  }
+
   type ChatProtocolApi = BZFlagWebProtocolApi & {
     ADMIN_PLAYERS?: number;
     ALL_PLAYERS?: number;
@@ -601,6 +607,15 @@ SOFTWARE.
   function handleProtocolFollowUp(session: ProtocolSession, result: ProtocolResult): void {
     const protocol = window.BZFlagWebProtocol;
     if (!protocol || !result || result.valid === false) return;
+    if (protocol.MSG_SUPER_KILL !== undefined && result.code === protocol.MSG_SUPER_KILL) {
+      session.protocolError = true;
+      setStatus(t("serverDisconnect"), "error");
+      appendEvent(t("serverDisconnect"), "error");
+      if (session.socket?.readyState === WebSocket.OPEN) {
+        session.socket.close(1008, "BZFlag server requested disconnect");
+      }
+      return;
+    }
     if (result.code === protocol.MSG_UDP_LINK_REQUEST) {
       if (protocol.encodeUDPLinkEstablished) {
         sendSessionPacket(session, result.channel ?? CHANNEL_TCP, protocol.encodeUDPLinkEstablished());
@@ -706,10 +721,16 @@ SOFTWARE.
           }
           if (result?.local && result.player && session.inputState) {
             session.inputState.playerId = Number.isInteger(result.player.playerId) ? Number(result.player.playerId) : null;
+            session.serverPlayerOrder = null;
             appendEvent(`Assigned BZFlag player ID ${result.player.playerId}.`);
           }
           if (result?.data && session.inputState && result.data.playerId === session.inputState.playerId) {
-            if (result.code === protocol.MSG_PLAYER_UPDATE || result.code === protocol.MSG_PLAYER_UPDATE_SMALL || result.code === protocol.MSG_ALIVE) {
+            if (result.code === protocol.MSG_ALIVE) {
+              session.serverPlayerOrder = null;
+              Object.assign(session.inputState, result.data, { physicsReady: true });
+            } else if ((result.code === protocol.MSG_PLAYER_UPDATE || result.code === protocol.MSG_PLAYER_UPDATE_SMALL)
+              && acceptsServerOrder(session.serverPlayerOrder, result.data.order)) {
+              session.serverPlayerOrder = Number(result.data.order);
               Object.assign(session.inputState, result.data, { physicsReady: true });
             }
           }
@@ -733,7 +754,7 @@ SOFTWARE.
     socket: WebSocket | null,
     audio: AudioEngine,
     getInputState: (command?: string, phase?: string, key?: string) => Record<string, any> = () => ({}),
-    getChannel: (command?: string, phase?: string, state?: Record<string, any>, payload?: Uint8Array) => number = () => CHANNEL_TCP
+    getChannel: (command?: string, phase?: string, state?: Record<string, any>, payload?: Uint8Array) => number | null = () => CHANNEL_TCP
   ): () => void {
     const pressed = new Set();
     const sendCommand = (command: string, phase: string, key: string): void => {
@@ -743,7 +764,14 @@ SOFTWARE.
         const payload = protocol.encodeInput(command, phase, key, state);
         if (payload) {
           const channel = getChannel(command, phase, state, payload);
-        socket.send(encodeBridgeMessage(channel, payload) as unknown as ArrayBuffer);
+          // BZFS accepts MsgShotBegin on UDP only for the browser bridge. A
+          // not-yet-established UDP link must suppress the shot instead of
+          // silently downgrading it to the TCP channel.
+          if (channel === null || (command === "fire" && channel !== CHANNEL_UDP)) {
+            if (command === "fire") appendEvent("Fire input suppressed until the UDP link is ready.", "warning");
+            return;
+          }
+          socket.send(encodeBridgeMessage(channel, payload) as unknown as ArrayBuffer);
         }
       }
       appendEvent(`${command} (${phase})`);
@@ -780,6 +808,12 @@ SOFTWARE.
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
+  }
+
+  function resolveInputChannel(command = "", udpReady = false, useUDP = true): number | null {
+    if (command === "fire") return udpReady && useUDP ? CHANNEL_UDP : null;
+    const udpCommands = new Set(["move-forward", "move-backward", "turn-left", "turn-right", "shot-end"]);
+    return udpReady && udpCommands.has(command) ? CHANNEL_UDP : CHANNEL_TCP;
   }
 
   function bindControls(audio: AudioEngine, renderer: BZFlagWebRendererHandle): void {
@@ -897,6 +931,7 @@ SOFTWARE.
       flagNegotiationSent: false,
       udpRequested: false,
       udpReady: false,
+      serverPlayerOrder: null,
       queriesSent: false,
       settingsRequested: false,
       worldHashRequested: false,
@@ -929,8 +964,7 @@ SOFTWARE.
       }
       return { command, phase };
     }, (command = "") => {
-      const udpCommands = new Set(["move-forward", "move-backward", "turn-left", "turn-right", "fire", "shot-end"]);
-      return protocolSession.udpReady && udpCommands.has(command) ? CHANNEL_UDP : CHANNEL_TCP;
+      return resolveInputChannel(command, protocolSession.udpReady, connection.useUDP !== false);
     });
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("./service-worker.js", { scope: "./" }).catch(() => {
@@ -962,7 +996,11 @@ SOFTWARE.
     toWebSocketUrl,
     toWebSocketProtocols,
     resolveChatTarget,
-    sendChatMessage
+    sendChatMessage,
+    resolveInputChannel,
+    acceptsServerOrder,
+    bindKeyboard,
+    handleProtocolFollowUp
   };
   document.addEventListener("DOMContentLoaded", init);
 })();
