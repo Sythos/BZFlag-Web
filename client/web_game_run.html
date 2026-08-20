@@ -120,6 +120,27 @@ SOFTWARE.
             </dl>
           </section>
 
+          <section class="sidebar-section chat-panel" aria-labelledby="chat-heading">
+            <h2 id="chat-heading" class="panel-eyebrow" data-i18n="chat">Chat</h2>
+            <form id="chat-composer" class="chat-composer" novalidate>
+              <div class="chat-field">
+                <label for="chat-target" data-i18n="chatTarget">Send to</label>
+                <select id="chat-target" name="target">
+                  <option value="all" data-i18n="chatTargetAll">Everyone</option>
+                  <option value="team" data-i18n="chatTargetTeam">My team</option>
+                  <option value="admin" data-i18n="chatTargetAdmin">Administrators</option>
+                </select>
+              </div>
+              <div class="chat-field">
+                <label for="chat-message" data-i18n="chatMessage">Message</label>
+                <textarea id="chat-message" name="message" rows="3" maxlength="128" required aria-describedby="chat-help chat-status" data-i18n-placeholder="chatMessagePlaceholder"></textarea>
+                <span id="chat-help" class="field-help" data-i18n="chatHelp">Messages use the TCP game channel and are limited to 128 characters.</span>
+              </div>
+              <button class="primary-button compact-button" type="submit" data-i18n="chatSend">Send</button>
+              <p id="chat-status" class="form-status" role="status" aria-live="polite"></p>
+            </form>
+          </section>
+
           <section class="sidebar-section renderer-panel">
             <p class="panel-eyebrow" data-i18n="rendering">Rendering</p>
             <div class="renderer-choice active" id="renderer-choice-primary"><span class="choice-icon" aria-hidden="true">▣</span><span><strong data-i18n="webgpu">WebGPU</strong><small data-i18n="webgpuPrimary">Primary renderer</small></span><span class="choice-state" id="webgpu-state">…</span></div>

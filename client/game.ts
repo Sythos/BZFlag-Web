@@ -102,6 +102,7 @@ SOFTWARE.
   const CHANNEL_UDP = 1;
   const WEBSOCKET_SUBPROTOCOL = "bzflag-web-v1";
   const TOKEN_SUBPROTOCOL_PREFIX = "bzflag-token.";
+  const CHAT_MESSAGE_MAX_LENGTH = 128;
   // The primary bindings below mirror BZFlag 2.4.31's ActionBinding defaults.
   // WASD and F/T remain browser-friendly aliases for the existing web UI.
   const COMMAND_MAP: Record<string, string> = {
@@ -430,6 +431,89 @@ SOFTWARE.
     }
     session.socket.send(encodeBridgeMessage(channel, packet) as unknown as ArrayBuffer);
     return true;
+  }
+
+  type ChatProtocolApi = BZFlagWebProtocolApi & {
+    ADMIN_PLAYERS?: number;
+    ALL_PLAYERS?: number;
+    FIRST_TEAM?: number;
+    TEAM_BY_NAME?: Record<string, number>;
+  };
+
+  function resolveChatTarget(selection: string, connection: Connection = {}, protocol: BZFlagWebProtocolApi): number | null {
+    const chatProtocol = protocol as ChatProtocolApi;
+    const allPlayers = Number(chatProtocol.ALL_PLAYERS ?? 254);
+    const adminPlayers = Number(chatProtocol.ADMIN_PLAYERS ?? 252);
+    const firstTeam = Number(chatProtocol.FIRST_TEAM ?? 251);
+    const target = String(selection || "").trim().toLowerCase();
+    if (target === "all") {
+      return Number.isInteger(allPlayers) && allPlayers >= 0 && allPlayers < 255 ? allPlayers : null;
+    }
+    if (target === "admin") {
+      return Number.isInteger(adminPlayers) && adminPlayers >= 0 && adminPlayers < 255 ? adminPlayers : null;
+    }
+    if (target === "team") {
+      const teamName = String(connection.team || "").trim().toLowerCase();
+      const teamIndex = chatProtocol.TEAM_BY_NAME ? Number(chatProtocol.TEAM_BY_NAME[teamName]) : NaN;
+      if (!Number.isInteger(teamIndex) || teamIndex < 0 || teamIndex > 7) {
+        return null;
+      }
+      const teamTarget = firstTeam - teamIndex;
+      return Number.isInteger(teamTarget) && teamTarget >= 0 && teamTarget < 255 ? teamTarget : null;
+    }
+    const numericTarget = Number(target);
+    return Number.isInteger(numericTarget) && numericTarget >= 0 && numericTarget < 255 ? numericTarget : null;
+  }
+
+  function sendChatMessage(
+    socket: WebSocket | null,
+    protocol: BZFlagWebProtocolApi | null | undefined,
+    connection: Connection,
+    selection: string,
+    message: string
+  ): boolean {
+    const text = String(message || "").trim();
+    if (!text || text.length > CHAT_MESSAGE_MAX_LENGTH || !socket || socket.readyState !== WebSocket.OPEN || !protocol?.encodeInput) {
+      return false;
+    }
+    const target = resolveChatTarget(selection, connection, protocol);
+    if (target === null) {
+      return false;
+    }
+    const payload = protocol.encodeInput("message", "start", "chat", { message: text, target });
+    if (!payload) {
+      return false;
+    }
+    socket.send(encodeBridgeMessage(CHANNEL_TCP, payload) as unknown as ArrayBuffer);
+    return true;
+  }
+
+  function bindChatComposer(socket: WebSocket | null, connection: Connection, protocol: BZFlagWebProtocolApi): () => void {
+    const form = get<HTMLFormElement>("chat-composer");
+    const message = get<HTMLTextAreaElement>("chat-message");
+    const target = get<HTMLSelectElement>("chat-target");
+    const status = get("chat-status");
+    if (!form || !message || !target) {
+      return () => undefined;
+    }
+    const submit = (event: SubmitEvent): void => {
+      event.preventDefault();
+      if (sendChatMessage(socket, protocol, connection, target.value, message.value)) {
+        message.value = "";
+        if (status) {
+          status.className = "form-status success";
+          status.textContent = t("chatSent");
+        }
+        appendEvent(t("chatSent"));
+        return;
+      }
+      if (status) {
+        status.className = "form-status error";
+        status.textContent = t("chatUnavailable");
+      }
+    };
+    form.addEventListener("submit", submit);
+    return () => form.removeEventListener("submit", submit);
   }
 
   function sendInitialProtocolPackets(session: ProtocolSession): void {
@@ -832,6 +916,7 @@ SOFTWARE.
     };
     const socket = connectGateway(connection, (data) => handleGatewayMessage(data, protocolSession));
     protocolSession.socket = socket;
+    bindChatComposer(socket, connection, protocolApi);
     bindKeyboard(socket, audio, (command = "", phase = "") => {
       renderer.handleInput?.(command, phase);
       // Until the renderer supplies a physics snapshot, this remains null for
@@ -875,7 +960,9 @@ SOFTWARE.
     decodeBridgeMessage,
     encodeBridgeMessage,
     toWebSocketUrl,
-    toWebSocketProtocols
+    toWebSocketProtocols,
+    resolveChatTarget,
+    sendChatMessage
   };
   document.addEventListener("DOMContentLoaded", init);
 })();

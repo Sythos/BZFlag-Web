@@ -49,6 +49,7 @@ const requiredFiles = [
   "dist/service-worker.js",
   "service-worker.js",
   "tests/protocol.test.mjs",
+  "tests/game.test.mjs",
   "tests/renderer.test.mjs",
   "tests/state.test.mjs",
   "tests/world.test.mjs",
@@ -152,7 +153,7 @@ for (const file of await collectFiles(join(root, "assets"), "assets")) {
 for (const marker of ["connect-form", "remember-password", "session-token", "F11", "BZFS 2.4.31", "Sythos"]) {
   if (!index.includes(marker)) throw new Error(`index.html is missing ${marker}`);
 }
-for (const marker of ["game-canvas", "protocol.js", "WebGPU", "WebGL2", "Sythos", "BZFS 2.4.31"]) {
+for (const marker of ["game-canvas", "chat-composer", "chat-target", "chat-message", "protocol.js", "WebGPU", "WebGL2", "Sythos", "BZFS 2.4.31"]) {
   if (!game.includes(marker)) throw new Error(`web_game_run.html is missing ${marker}`);
 }
 if (manifest.license !== "MIT" || manifest.scope !== "./") {
@@ -163,6 +164,7 @@ if (!index.includes('id="gateway-endpoint"') || !index.includes('id="gateway-end
 }
 
 await import("./protocol.test.mjs");
+await import("./game.test.mjs");
 await import("./renderer.test.mjs");
 await import("./state.test.mjs");
 await import("./world.test.mjs");

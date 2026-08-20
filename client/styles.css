@@ -863,6 +863,65 @@ kbd {
   white-space: nowrap;
 }
 
+.chat-composer {
+  display: grid;
+  gap: 12px;
+}
+
+.chat-field {
+  min-width: 0;
+}
+
+.chat-field label {
+  display: block;
+  margin-bottom: 7px;
+  color: var(--text-soft);
+  font-size: 11px;
+  font-weight: 670;
+}
+
+.chat-composer select,
+.chat-composer textarea {
+  width: 100%;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  outline: none;
+  background: rgba(4, 14, 25, 0.46);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
+}
+
+.chat-composer select {
+  min-height: 38px;
+  padding: 7px 10px;
+}
+
+.chat-composer textarea {
+  min-height: 76px;
+  padding: 8px 10px;
+  line-height: 1.4;
+  resize: vertical;
+}
+
+.chat-composer select:focus,
+.chat-composer textarea:focus {
+  border-color: var(--accent);
+  background: rgba(4, 14, 25, 0.66);
+  box-shadow: 0 0 0 3px rgba(101, 227, 207, 0.12);
+}
+
+.chat-composer .primary-button {
+  width: 100%;
+}
+
+.chat-composer .form-status {
+  margin: -2px 0 0;
+  min-height: 17px;
+  font-size: 10px;
+}
+
 .renderer-choice {
   display: grid;
   grid-template-columns: 22px 1fr auto;
