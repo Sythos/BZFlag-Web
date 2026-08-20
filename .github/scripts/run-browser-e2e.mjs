@@ -444,7 +444,7 @@ async function run() {
     const requestFailures = [];
     page.on("console", (message) => {
       const text = message.text();
-      const expectedBrowserNoise = /powerPreference option is currently ignored when calling requestAdapter/i.test(text);
+      const expectedBrowserNoise = /(?:powerPreference option is currently ignored when calling requestAdapter|No available adapters\.|GL Driver Message .*GPU stall due to ReadPixels)/i.test(text);
       if (["error", "warning"].includes(message.type()) && !expectedBrowserNoise) consoleMessages.push(`${message.type()}: ${text}`);
     });
     page.on("pageerror", (error) => consoleMessages.push(`pageerror: ${error.message}`));

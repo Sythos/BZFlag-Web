@@ -107,6 +107,7 @@ requireMarker(ci, ".github/workflows/ci.yml", "run-browser-e2e.mjs");
 requireMarker(ci, ".github/workflows/ci.yml", "playwright@1.62.1");
 requireMarker(ci, ".github/workflows/ci.yml", "playwright install --dry-run --with-deps --only-shell chromium");
 requireMarker(ci, ".github/workflows/ci.yml", "timeout 12m npx --prefix");
+requireMarker(ci, ".github/workflows/ci.yml", "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a");
 
 const container = workflows.get("container.yml") || "";
 requireMarker(container, ".github/workflows/container.yml", "context: server");
@@ -138,6 +139,9 @@ requireMarker(release, ".github/workflows/release.yml", "run-browser-e2e.mjs");
 requireMarker(release, ".github/workflows/release.yml", "playwright@1.62.1");
 requireMarker(release, ".github/workflows/release.yml", "playwright install --dry-run --with-deps --only-shell chromium");
 requireMarker(release, ".github/workflows/release.yml", "timeout 12m npx --prefix");
+requireMarker(release, ".github/workflows/release.yml", "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a");
+requireMarker(release, ".github/workflows/release.yml", "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c");
+requireMarker(release, ".github/workflows/release.yml", "actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8");
 const security = workflows.get("security.yml") || "";
 requireMarker(security, ".github/workflows/security.yml", "github/codeql-action/init@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd");
 requireMarker(security, ".github/workflows/security.yml", "github/codeql-action/analyze@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd");
