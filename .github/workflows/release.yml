@@ -55,7 +55,7 @@ jobs:
       release_commit: ${{ steps.ref.outputs.release_commit }}
     steps:
       - name: Checkout requested release ref
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
           fetch-depth: 0
@@ -129,7 +129,7 @@ jobs:
       RELEASE_BASE_BRANCH: main
     steps:
       - name: Checkout validated release source
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.validate-ref.outputs.release_tag }}
           fetch-depth: 0
@@ -239,7 +239,7 @@ jobs:
       RELEASE_TAG: ${{ needs.validate-ref.outputs.release_tag }}
     steps:
       - name: Checkout tagged source
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.validate-ref.outputs.release_tag }}
           fetch-depth: 0
@@ -426,7 +426,7 @@ jobs:
       IMAGE_NAME: ghcr.io/sythos/bzflag-web-server
     steps:
       - name: Checkout release source
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.RELEASE_TAG }}
           persist-credentials: false

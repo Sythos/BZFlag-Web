@@ -79,6 +79,13 @@ for (const [name, source] of workflows) {
   }
 }
 
+const checkoutNode24Marker = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1";
+for (const [name, source] of workflows) {
+  if (source.includes("actions/checkout@")) {
+    requireMarker(source, join(workflowDirectory, name), checkoutNode24Marker);
+  }
+}
+
 const ci = workflows.get("ci.yml") || "";
 requireMarker(ci, ".github/workflows/ci.yml", "npm ci --prefix");
 requireMarker(ci, ".github/workflows/ci.yml", "node-version: 26.7.0");
@@ -120,6 +127,10 @@ requireMarker(release, ".github/workflows/release.yml", "node .github/scripts/ch
 requireMarker(release, ".github/workflows/release.yml", "validate-docker-context.mjs");
 requireMarker(release, ".github/workflows/release.yml", "run-browser-e2e.mjs");
 requireMarker(release, ".github/workflows/release.yml", "playwright@1.52.0");
+const security = workflows.get("security.yml") || "";
+requireMarker(security, ".github/workflows/security.yml", "github/codeql-action/init@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd");
+requireMarker(security, ".github/workflows/security.yml", "github/codeql-action/analyze@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd");
+requireMarker(security, ".github/workflows/security.yml", "github/codeql-action/upload-sarif@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd");
 if (/find release -maxdepth 1 -type f[^\n]*>\s*release\/SHA256SUMS\.txt/.test(release)
   && !/!\s*-name\s+SHA256SUMS\.txt/.test(release)) {
   failures.push(".github/workflows/release.yml: SHA256SUMS.txt must not hash itself");
