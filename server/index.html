@@ -77,6 +77,9 @@ npm start</code></pre>
       <pre><code>curl http://127.0.0.1:8080/healthz</code></pre>
       <p>The WebSocket endpoint is <code>/bridge?server=official-main</code>. The browser offers <code>bzflag-web-v1</code> together with its encoded bearer as a subprotocol, and the gateway returns <code>Sec-WebSocket-Protocol: bzflag-web-v1</code>. The browser client should use <code>ws://</code> for local HTTP development and <code>wss://</code> when its page is served over HTTPS.</p>
 
+      <h2>Upstream BZFS identity check</h2>
+      <p>The gateway never treats an open TCP socket as proof that it is a game server. For every selected target it sends the native <code>BZFLAG\r\n\r\n</code> preamble, then accepts traffic only after receiving <code>BZFS</code> with the configured four-digit protocol version and a valid player id. A non-BZFS response, a full-server id (<code>255</code>) or a silent target is closed within <code>limits.targetHandshakeTimeoutMs</code>; queued browser TCP and UDP data is not forwarded before this check succeeds.</p>
+
       <h2>Docker</h2>
       <pre><code>docker build -t sythos/bzflag-web-gateway:local .
 docker run --rm --name bzflag-web-gateway \

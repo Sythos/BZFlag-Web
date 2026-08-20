@@ -25,6 +25,9 @@ import { createServer as createTcpServer } from 'node:net';
 import type { RemoteInfo, Socket as DatagramSocket } from 'node:dgram';
 import type { AddressInfo, Server as TcpServer, Socket } from 'node:net';
 
+const BZFLAG_CONNECT_HEADER = Buffer.from('BZFLAG\r\n\r\n', 'ascii');
+const BZFS_GREETING = Buffer.concat([Buffer.from('BZFS0221', 'ascii'), Buffer.from([7])]);
+
 export interface BzFlagLoopbackFixture {
   tcpPort: number;
   udpPort: number;
@@ -90,8 +93,19 @@ export async function createBzFlagLoopbackFixture(fragmentDelayMs = 10): Promise
     connections.add(socket);
     socket.once('close', () => connections.delete(socket));
     let tcpInput: Buffer<ArrayBufferLike> = Buffer.alloc(0);
+    let handshakeComplete = false;
     socket.on('data', (chunk: Buffer | string) => {
       tcpInput = Buffer.concat([tcpInput, Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)]);
+      if (!handshakeComplete) {
+        if (tcpInput.length < BZFLAG_CONNECT_HEADER.length) return;
+        if (!tcpInput.subarray(0, BZFLAG_CONNECT_HEADER.length).equals(BZFLAG_CONNECT_HEADER)) {
+          socket.destroy();
+          return;
+        }
+        handshakeComplete = true;
+        tcpInput = tcpInput.subarray(BZFLAG_CONNECT_HEADER.length);
+        socket.write(BZFS_GREETING);
+      }
       const extracted = extractPackets(tcpInput);
       tcpInput = extracted.remainder;
       for (const packet of extracted.packets) {

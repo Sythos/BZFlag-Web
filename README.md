@@ -106,9 +106,13 @@ produces a Docker image and server archives for the gateway.
 For each browser connection, the gateway performs the HTTP/WebSocket handshake,
 validates the configured session policy, selects an official server by stable
 identifier, opens the corresponding BZFlag TCP/UDP connection and relays the
-bridge envelope. Idle, malformed, oversized or over-budget sessions are closed
-instead of being forwarded indefinitely. Full native protocol translation and
-gameplay parity remain later milestones.
+bridge envelope. Before releasing any queued browser payload, it sends the
+native `BZFLAG\r\n\r\n` preamble upstream and requires the bounded `BZFS` greeting,
+the configured protocol version and a valid player id. Non-BZFS services,
+version mismatches, full-server responses and silent targets are closed before
+client bytes can reach them. Idle, malformed, oversized or over-budget sessions
+are closed instead of being forwarded indefinitely. Full native protocol
+translation and gameplay parity remain later milestones.
 
 The production configuration is allowlist-first:
 

@@ -563,14 +563,7 @@ SOFTWARE.
     socket.addEventListener("open", () => {
       setStatus(t("connected"), "success");
       appendEvent(`Binary BZWB bridge ready for server ID ${safeText(connection?.serverId)}.`);
-      const protocol = window.BZFlagWebProtocol;
-      if (protocol?.encodeConnectHeader) {
-        socket.send(encodeBridgeMessage(CHANNEL_TCP, protocol.encodeConnectHeader()) as unknown as ArrayBuffer);
-        appendEvent("BZFlag protocol handshake sent.");
-      } else {
-        setStatus("BZFlag protocol adapter unavailable", "error");
-        appendEvent("BZFlag protocol adapter unavailable.", "error");
-      }
+      appendEvent("Gateway is validating the BZFS handshake before forwarding game traffic.");
     });
     socket.addEventListener("message", (event) => onMessage(event.data));
     socket.addEventListener("error", () => {

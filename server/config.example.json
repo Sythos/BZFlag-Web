@@ -40,7 +40,8 @@
     "maxFramesPerSecond": 240,
     "maxControlFramesPerSecond": 60,
     "maxContinuationFrames": 16,
-    "maxContinuationBytes": 1048576
+    "maxContinuationBytes": 1048576,
+    "targetHandshakeTimeoutMs": 10000
   },
   "trustProxy": false,
   "trustedProxyPeers": []

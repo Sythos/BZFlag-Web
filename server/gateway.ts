@@ -36,6 +36,9 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 export const GATEWAY_VERSION = '0.1.0';
 export const DEFAULT_BZFLAG_VERSION = '2.4.31';
 export const DEFAULT_BZFLAG_PROTOCOL = '0221';
+export const BZFLAG_CONNECT_HEADER = Buffer.from('BZFLAG\r\n\r\n', 'ascii');
+const BZFS_GREETING_BYTES = 9;
+const BZFS_NO_PLAYER = 255;
 export const BRIDGE_MAGIC = Buffer.from('BZWB', 'ascii');
 export const BRIDGE_VERSION = 1;
 export const CHANNEL_TCP = 0;
@@ -82,6 +85,7 @@ interface GatewayLimits {
   maxControlFramesPerSecond: number;
   maxContinuationFrames: number;
   maxContinuationBytes: number;
+  targetHandshakeTimeoutMs: number;
 }
 
 interface TlsConfig {
@@ -186,6 +190,7 @@ export const DEFAULT_CONFIG: Omit<GatewayConfig, 'sessionToken' | 'tls' | 'confi
     maxControlFramesPerSecond: 60,
     maxContinuationFrames: 16,
     maxContinuationBytes: DEFAULT_MAX_FRAME_BYTES,
+    targetHandshakeTimeoutMs: 10 * 1000,
   },
   trustProxy: false,
   trustedProxyPeers: [],
@@ -427,6 +432,10 @@ function normalizeServer(server: any, index: number, allowPrivateAddresses = fal
   if (kind !== 'official' && kind !== 'custom') {
     throw new Error(`servers[${index}].kind must be official or custom`);
   }
+  const protocolVersion = String(server.protocolVersion ?? DEFAULT_BZFLAG_PROTOCOL);
+  if (!/^\d{4}$/.test(protocolVersion)) {
+    throw new Error(`servers[${index}].protocolVersion must contain exactly four digits`);
+  }
   return Object.freeze({
     id,
     host,
@@ -434,7 +443,7 @@ function normalizeServer(server: any, index: number, allowPrivateAddresses = fal
     udpPort,
     kind,
     enabled: server.enabled !== false,
-    protocolVersion: String(server.protocolVersion ?? DEFAULT_BZFLAG_PROTOCOL),
+    protocolVersion,
     bzflagVersion: String(server.bzflagVersion ?? DEFAULT_BZFLAG_VERSION),
     label: String(server.label ?? id).slice(0, 120),
   });
@@ -499,6 +508,7 @@ export function normalizeConfig(input: Record<string, any> = {}): GatewayConfig 
     maxControlFramesPerSecond: asPositiveInteger(limits.maxControlFramesPerSecond, 60, 'limits.maxControlFramesPerSecond'),
     maxContinuationFrames: asPositiveInteger(limits.maxContinuationFrames, 16, 'limits.maxContinuationFrames'),
     maxContinuationBytes: asPositiveInteger(limits.maxContinuationBytes, DEFAULT_MAX_FRAME_BYTES, 'limits.maxContinuationBytes'),
+    targetHandshakeTimeoutMs: asPositiveInteger(limits.targetHandshakeTimeoutMs, 10 * 1000, 'limits.targetHandshakeTimeoutMs'),
   };
   if (config.limits.maxFrameBytes < 1024) {
     throw new Error('limits.maxFrameBytes must be at least 1024');
@@ -978,6 +988,10 @@ class GatewaySession {
   private tcp: Socket | null;
   private udp: DatagramSocket | null;
   private connecting: boolean;
+  private udpReady: boolean;
+  private targetHandshakeVerified: boolean;
+  private targetHandshakeBuffer: Buffer;
+  private targetHandshakeTimer: ReturnType<typeof setTimeout> | null;
   private pendingMessages: BridgeMessage[];
   private pendingBytes: number;
   private closed: boolean;
@@ -993,6 +1007,10 @@ class GatewaySession {
     this.tcp = null;
     this.udp = null;
     this.connecting = true;
+    this.udpReady = false;
+    this.targetHandshakeVerified = false;
+    this.targetHandshakeBuffer = Buffer.alloc(0);
+    this.targetHandshakeTimer = null;
     this.pendingMessages = [];
     this.pendingBytes = 0;
     this.closed = false;
@@ -1024,8 +1042,12 @@ class GatewaySession {
       this.tcp.setTimeout(this.gateway.config.limits.idleTimeoutMs, () => this.close('TCP idle timeout'));
       this.tcp.on('connect', () => {
         this.lastActivity = Date.now();
+        this.targetHandshakeTimer = setTimeout(() => {
+          this.#fail('Target did not complete the BZFS handshake', 1003);
+        }, this.gateway.config.limits.targetHandshakeTimeoutMs);
+        this.tcp?.write(BZFLAG_CONNECT_HEADER);
       });
-      this.tcp.on('data', (data: Buffer) => this.#sendTargetData(CHANNEL_TCP, data));
+      this.tcp.on('data', (data: Buffer) => this.#handleTargetTcpData(data));
       this.tcp.on('error', (error: NodeJS.ErrnoException) => this.#fail(`TCP connection error: ${error.code || 'error'}`));
       this.tcp.on('close', () => {
         if (!this.closed) this.close('TCP connection closed');
@@ -1036,15 +1058,61 @@ class GatewaySession {
       this.udp.on('error', (error: NodeJS.ErrnoException) => this.#fail(`UDP connection error: ${error.code || 'error'}`));
       this.udp.connect(this.target.udpPort, endpoint.address, () => {
         this.lastActivity = Date.now();
-        this.connecting = false;
-        const pending = this.pendingMessages;
-        this.pendingMessages = [];
-        this.pendingBytes = 0;
-        for (const message of pending) this.#forwardMessage(message);
+        this.udpReady = true;
+        this.#maybeReady();
       });
     } catch (error: any) {
       this.#fail(`Target connection setup failed: ${error.code || 'error'}`);
     }
+  }
+
+  #handleTargetTcpData(data: Buffer): void {
+    if (this.closed) return;
+    if (this.targetHandshakeVerified) {
+      this.#sendTargetData(CHANNEL_TCP, data);
+      return;
+    }
+    const expected = Buffer.from(`BZFS${this.target.protocolVersion}`, 'ascii');
+    const required = BZFS_GREETING_BYTES - this.targetHandshakeBuffer.length;
+    if (required > 0) {
+      const prefix = data.subarray(0, required);
+      this.targetHandshakeBuffer = Buffer.concat([this.targetHandshakeBuffer, prefix]);
+      const prefixLength = Math.min(expected.length, this.targetHandshakeBuffer.length);
+      if (!expected.subarray(0, prefixLength).equals(this.targetHandshakeBuffer.subarray(0, prefixLength))) {
+        this.#fail('Target is not an allowed BZFS server', 1003);
+        return;
+      }
+      data = data.subarray(prefix.length);
+      if (this.targetHandshakeBuffer.length < BZFS_GREETING_BYTES) return;
+    }
+    const greeting = this.targetHandshakeBuffer;
+    if (!greeting.subarray(0, expected.length).equals(expected)) {
+      this.#fail('Target is not an allowed BZFS server', 1003);
+      return;
+    }
+    if (greeting[8] === BZFS_NO_PLAYER) {
+      this.#fail('Target BZFS server refused the player slot', 1003);
+      return;
+    }
+    this.targetHandshakeVerified = true;
+    this.targetHandshakeBuffer = Buffer.alloc(0);
+    if (this.targetHandshakeTimer) {
+      clearTimeout(this.targetHandshakeTimer);
+      this.targetHandshakeTimer = null;
+    }
+    // Forward only the validated BZFS greeting and any bytes coalesced after it.
+    this.#sendTargetData(CHANNEL_TCP, greeting);
+    if (data.length > 0) this.#sendTargetData(CHANNEL_TCP, data);
+    this.#maybeReady();
+  }
+
+  #maybeReady(): void {
+    if (this.closed || this.connecting === false || !this.targetHandshakeVerified || !this.udpReady) return;
+    this.connecting = false;
+    const pending = this.pendingMessages;
+    this.pendingMessages = [];
+    this.pendingBytes = 0;
+    for (const message of pending) this.#forwardMessage(message);
   }
 
   #handleClientMessage(payload: Buffer): void {
@@ -1130,6 +1198,11 @@ class GatewaySession {
     if (this.closed) return;
     this.closed = true;
     this.connecting = false;
+    this.udpReady = false;
+    if (this.targetHandshakeTimer) {
+      clearTimeout(this.targetHandshakeTimer);
+      this.targetHandshakeTimer = null;
+    }
     this.pendingMessages = [];
     this.pendingBytes = 0;
     if (this.tcp && !this.tcp.destroyed) this.tcp.destroy();

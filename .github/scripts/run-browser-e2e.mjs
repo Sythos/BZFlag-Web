@@ -92,7 +92,6 @@ const BRIDGE_MAGIC = Buffer.from([0x42, 0x5a, 0x57, 0x42]);
 const BRIDGE_VERSION = 1;
 const CHANNEL_TCP = 0;
 const CHANNEL_UDP = 1;
-const CONNECT_HEADER = Buffer.from("BZFLAG\r\n\r\n", "ascii");
 const SERVER_GREETING = Buffer.concat([Buffer.from("BZFS0221", "ascii"), Buffer.from([7])]);
 const MSG_ACCEPT = 0x6163;
 const MSG_ENTER = 0x656e;
@@ -192,7 +191,7 @@ function startFixture() {
   const state = {
     upgradeCount: 0,
     binaryMessages: 0,
-    connectHeaderReceived: false,
+    gatewayHandshakeReceived: false,
     enterPackets: 0,
     enterNickname: null,
     acceptSent: 0,
@@ -255,7 +254,11 @@ function startFixture() {
       [CHANNEL_TCP, Buffer.alloc(0)],
       [CHANNEL_UDP, Buffer.alloc(0)],
     ]);
-    let tcpReady = false;
+    // This fixture represents the already-hardened gateway boundary. The
+    // gateway performs the outbound BZFLAG/BZFS validation before exposing
+    // this WebSocket, so the browser receives the validated greeting first.
+    state.gatewayHandshakeReceived = true;
+    sendBridgePayload(socket, CHANNEL_TCP, SERVER_GREETING);
 
     const sendAccept = () => {
       if (state.acceptSent > 0) return;
@@ -309,21 +312,6 @@ function startFixture() {
 
     const consumeClientPayload = (channel, payload) => {
       let pending = Buffer.concat([channelBuffers.get(channel), Buffer.from(payload)]);
-      if (channel === CHANNEL_TCP && !tcpReady) {
-        if (pending.length < CONNECT_HEADER.length) {
-          channelBuffers.set(channel, pending);
-          return;
-        }
-        if (!pending.subarray(0, CONNECT_HEADER.length).equals(CONNECT_HEADER)) {
-          state.errors.push("Client did not send the BZFLAG connect header");
-          socket.destroy();
-          return;
-        }
-        state.connectHeaderReceived = true;
-        tcpReady = true;
-        pending = pending.subarray(CONNECT_HEADER.length);
-        sendBridgePayload(socket, CHANNEL_TCP, SERVER_GREETING);
-      }
       while (pending.length >= 4) {
         const payloadLength = pending.readUInt16BE(0);
         const packetLength = 4 + payloadLength;
@@ -505,7 +493,7 @@ async function run() {
     if (gameState.player !== "Browser E2E Player") fail(`Session player was not carried into the game page: ${gameState.player}`);
     if (!gameState.worldStateReady) fail("Client world state module did not load from the compiled dist path");
     if (fixture.state.upgradeCount !== 1) fail(`Fixture observed ${fixture.state.upgradeCount} WebSocket upgrades; expected exactly one`);
-    if (!fixture.state.connectHeaderReceived) fail("Fixture did not receive the BZFLAG connect header");
+    if (!fixture.state.gatewayHandshakeReceived) fail("Fixture did not expose a validated BZFS handshake");
     if (fixture.state.enterPackets < 1) fail("Fixture did not receive a BZFlag MsgEnter packet");
     if (fixture.state.enterNickname !== "Browser E2E Player") fail(`Fixture received an unexpected callsign: ${fixture.state.enterNickname || "<empty>"}`);
     if (fixture.state.acceptSent < 1) fail("Fixture did not send a BZFlag MsgAccept packet");

@@ -30,6 +30,7 @@ import type { RemoteInfo, Socket as DatagramSocket } from 'node:dgram';
 import type { TestContext } from 'node:test';
 import { createBzFlagLoopbackFixture } from './fixtures/bzflag-loopback.js';
 import {
+  BZFLAG_CONNECT_HEADER,
   CHANNEL_TCP,
   CHANNEL_UDP,
   createGateway,
@@ -122,9 +123,9 @@ function parseServerFrame(buffer: Buffer): ServerFrame | null {
   return { opcode: first & 0x0f, payload: buffer.subarray(offset, offset + length), rest: buffer.subarray(offset + length) };
 }
 
-function readServerFrame(socket: Socket): Promise<ServerFrame> {
+function readServerFrame(socket: Socket, initial: Buffer<ArrayBufferLike> = Buffer.alloc(0)): Promise<ServerFrame> {
   return new Promise<ServerFrame>((resolve, reject) => {
-    let buffer = Buffer.alloc(0);
+    let buffer = Buffer.from(initial);
     const onData = (chunk: Buffer | string) => {
       buffer = Buffer.concat([buffer, Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)]);
       const frame = parseServerFrame(buffer);
@@ -132,6 +133,11 @@ function readServerFrame(socket: Socket): Promise<ServerFrame> {
       socket.off('data', onData);
       resolve(frame);
     };
+    const initialFrame = parseServerFrame(buffer);
+    if (initialFrame) {
+      resolve(initialFrame);
+      return;
+    }
     socket.on('data', onData);
     socket.once('error', reject);
   });
@@ -299,7 +305,22 @@ test('gateway never falls back to a query token when a token subprotocol is pres
 
 test('gateway exposes health and forwards TCP and UDP traffic only to an allowlisted target', async (t: TestContext) => {
   const tcpTarget = createTcpServer((socket) => {
-    socket.on('data', (data: Buffer | string) => socket.write(Buffer.concat([Buffer.from('tcp-reply:'), Buffer.isBuffer(data) ? data : Buffer.from(data)])));
+    let ready = false;
+    let buffered = Buffer.alloc(0);
+    socket.on('data', (data: Buffer | string) => {
+      buffered = Buffer.concat([buffered, Buffer.isBuffer(data) ? data : Buffer.from(data)]);
+      if (!ready) {
+        if (buffered.length < BZFLAG_CONNECT_HEADER.length) return;
+        assert.deepEqual(buffered.subarray(0, BZFLAG_CONNECT_HEADER.length), BZFLAG_CONNECT_HEADER);
+        ready = true;
+        buffered = buffered.subarray(BZFLAG_CONNECT_HEADER.length);
+        socket.write(Buffer.concat([Buffer.from('BZFS0221', 'ascii'), Buffer.from([7])]));
+      }
+      if (buffered.length > 0) {
+        socket.write(Buffer.concat([Buffer.from('tcp-reply:'), buffered]));
+        buffered = Buffer.alloc(0);
+      }
+    });
   });
   const tcpPort = await listenTcp(tcpTarget);
   t.after(() => tcpTarget.close());
@@ -327,8 +348,10 @@ test('gateway exposes health and forwards TCP and UDP traffic only to an allowli
   const home = await fetch(`http://127.0.0.1:${address.port}/`).then((response) => response.text());
   assert.match(home, /BZFlag Web Gateway/);
 
-  const { connection, response } = await awaitableSocket(address.port);
+  const { connection, response, remainder } = await awaitableSocket(address.port);
   assert.match(response, /^HTTP\/1\.1 101 Switching Protocols/);
+  const greetingFrame = await readServerFrame(connection, remainder);
+  assert.deepEqual(decodeBridgeMessage(greetingFrame.payload).payload, Buffer.concat([Buffer.from('BZFS0221', 'ascii'), Buffer.from([7])]));
 
   connection.write(maskedWebSocketFrame(encodeBridgeMessage(CHANNEL_TCP, Buffer.from('hello'))));
   const tcpFrame = await readServerFrame(connection);
@@ -389,6 +412,8 @@ test('gateway relays BZFlag TCP streams and intact UDP datagrams through the bri
     ].join('\r\n')));
   });
   assert.match(connectionResult.response, /^HTTP\/1\.1 101 Switching Protocols/);
+  const greetingFrame = await readServerFrame(connectionResult.connection, connectionResult.remainder);
+  assert.deepEqual(decodeBridgeMessage(greetingFrame.payload).payload, Buffer.concat([Buffer.from('BZFS0221', 'ascii'), Buffer.from([7])]));
 
   const tcpPacket = bzFlagPacket(0x656e, Buffer.from([0, 1, 2, 3]));
   connectionResult.connection.write(maskedWebSocketFrame(encodeBridgeMessage(CHANNEL_TCP, tcpPacket)));
@@ -408,6 +433,35 @@ test('gateway relays BZFlag TCP streams and intact UDP datagrams through the bri
   assert.deepEqual(udpMessage.payload, udpPacket);
 
   connectionResult.connection.end(maskedWebSocketFrame(Buffer.alloc(0), 8));
+});
+
+test('gateway rejects a non-BZFS target before forwarding queued client bytes', async (t: TestContext) => {
+  let targetBytes = Buffer.alloc(0);
+  const target = createTcpServer((socket) => {
+    socket.on('data', (data: Buffer | string) => {
+      targetBytes = Buffer.concat([targetBytes, Buffer.isBuffer(data) ? data : Buffer.from(data)]);
+      socket.write(Buffer.from('HTTP/1.1\n', 'ascii'));
+    });
+  });
+  const targetPort = await listenTcp(target);
+  t.after(() => target.close());
+  const gateway = createGateway({
+    host: '127.0.0.1',
+    port: 0,
+    sessionToken: 'test-token',
+    allowPrivateAddresses: true,
+    allowedOrigins: ['http://localhost:3000'],
+    servers: [{ id: 'official-test', kind: 'official', host: '127.0.0.1', port: targetPort }],
+    limits: { targetHandshakeTimeoutMs: 1000, idleTimeoutMs: 5000 },
+  });
+  const address = await gateway.start();
+  t.after(() => gateway.stop());
+
+  const connection = await awaitableSocket(address.port);
+  assert.match(connection.response, /^HTTP\/1\.1 101 Switching Protocols/);
+  connection.connection.write(maskedWebSocketFrame(encodeBridgeMessage(CHANNEL_TCP, Buffer.from('client-secret'))));
+  await waitForSocketClose(connection.connection);
+  assert.deepEqual(targetBytes, BZFLAG_CONNECT_HEADER);
 });
 
 test('gateway closes a session before TCP write buffering can exceed its limit', async (t: TestContext) => {

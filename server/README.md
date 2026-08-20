@@ -126,6 +126,14 @@ metadata-service, documentation and other reserved address ranges are rejected
 by default. `allowPrivateAddresses` is a local-fixture escape hatch only; do not
 enable it on a public gateway.
 
+Before any queued browser payload is released, the gateway performs the native
+upstream preflight itself: it sends `BZFLAG\r\n\r\n`, waits for the bounded
+nine-byte `BZFS` greeting, checks the configured four-digit protocol version and
+rejects player id `255` or any non-BZFS response. TCP and UDP client traffic is
+held until that check and the UDP socket are both ready. `limits.targetHandshakeTimeoutMs`
+closes silent or non-cooperating targets quickly. This prevents an accidentally
+misconfigured HTTP, SSH or arbitrary TCP service from being used as a relay.
+
 ==> WebSocket bridge envelope
 
 New clients send one binary WebSocket message per bridge message. The first
@@ -156,7 +164,8 @@ frame, `maxControlFramesPerSecond` covers ping/pong/close frames,
 `maxContinuationFrames` counts continuation frames after a non-final binary
 frame, and `maxContinuationBytes` caps the assembled fragmented message.
 `handshakeTimeoutMs` covers the HTTP upgrade parser and `parserTimeoutMs` covers
-a frame that remains incomplete after its first bytes arrive.
+a frame that remains incomplete after its first bytes arrive;
+`targetHandshakeTimeoutMs` bounds the upstream BZFS identity preflight.
 
 ==> Security properties
 
