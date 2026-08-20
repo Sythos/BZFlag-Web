@@ -64,9 +64,11 @@ The browser opens `client/index.html` to enter a nickname, select an allowlisted
 server and set the connection preferences normally required by a BZFlag client.
 The Connect action transfers the session to `client/web_game_run.html`, which is
 the independent game window. The current MVP initializes the session state,
-keyboard/audio controls, bridge framing and renderer capability preview. The
-target gameplay layer will represent the native concepts of world state, tanks,
-shots, flags, teams, chat and scoreboard through browser APIs.
+keyboard/audio controls, bridge framing and a deterministic renderer scene
+pipeline. Validated world geometry records and authoritative tanks, shots and
+flags are converted into shared WebGPU/WebGL2 scene objects. The target
+gameplay layer still needs the complete native world decoder, simulation and
+full protocol/gameplay parity.
 
 The browser first requests WebGPU. When no usable adapter is available, the
 client selects WebGL2. Both renderer paths are designed to consume the same

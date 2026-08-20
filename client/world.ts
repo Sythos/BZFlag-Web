@@ -109,12 +109,155 @@ export interface WorldEnvelopeSummary {
   readonly compression: "zlib";
   readonly sections: readonly string[];
   readonly objectDecoder: "native-bzflag-required";
+  readonly geometryReady: boolean;
   readonly error?: string;
 }
 
 export interface WorldChunk {
   readonly bytesLeft: number;
   readonly chunk: Uint8Array;
+}
+
+export const WORLD_GEOMETRY_KINDS = Object.freeze([
+  "box",
+  "wall",
+  "pyramid",
+  "base",
+  "teleporter",
+  "sphere",
+  "cone",
+  "arc",
+  "mesh",
+  "zone"
+] as const);
+
+export const WORLD_GEOMETRY_LIMITS = Object.freeze({
+  maxObjects: 4096,
+  maxCoordinate: 1_000_000,
+  maxDimension: 1_000_000,
+  maxLabelBytes: 64
+});
+
+export type WorldGeometryKind = (typeof WORLD_GEOMETRY_KINDS)[number];
+export type GeometryVector3 = [number, number, number];
+export type GeometryColor = [number, number, number, number];
+
+export interface WorldGeometryObject {
+  readonly id?: string;
+  readonly kind: WorldGeometryKind;
+  readonly position: GeometryVector3;
+  readonly size: GeometryVector3;
+  readonly rotation: number;
+  readonly team?: number;
+  readonly color?: GeometryColor;
+  readonly material?: string;
+}
+
+export interface WorldGeometrySnapshot {
+  readonly version: 1;
+  readonly source: "native-adapter" | "wasm-decoder" | "world-database" | "unknown";
+  readonly mapVersion: number | null;
+  readonly objects: readonly WorldGeometryObject[];
+  readonly objectCount: number;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object";
+}
+
+function boundedFloat(value: unknown, minimum: number, maximum: number, fallback = 0): number {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.min(maximum, Math.max(minimum, number));
+}
+
+function geometryVector(value: unknown, fallback: GeometryVector3, minimum: number, maximum: number): GeometryVector3 {
+  const source = Array.isArray(value) || ArrayBuffer.isView(value) ? value as ArrayLike<unknown> : fallback;
+  return [
+    boundedFloat(source[0], minimum, maximum, fallback[0]),
+    boundedFloat(source[1], minimum, maximum, fallback[1]),
+    boundedFloat(source[2], minimum, maximum, fallback[2])
+  ];
+}
+
+function geometryKind(value: unknown): WorldGeometryKind | null {
+  const normalized = String(value || "").trim().toLowerCase();
+  const aliases: Record<string, WorldGeometryKind> = {
+    boxbuilding: "box",
+    basebuilding: "base",
+    pyramidbuilding: "pyramid",
+    teleporterbuilding: "teleporter"
+  };
+  const candidate = aliases[normalized] || normalized;
+  return (WORLD_GEOMETRY_KINDS as readonly string[]).includes(candidate) ? candidate as WorldGeometryKind : null;
+}
+
+function geometryColor(value: unknown): GeometryColor | undefined {
+  if (!(Array.isArray(value) || ArrayBuffer.isView(value))) return undefined;
+  const source = value as ArrayLike<unknown>;
+  return [
+    boundedFloat(source[0], 0, 1, 0.45),
+    boundedFloat(source[1], 0, 1, 0.48),
+    boundedFloat(source[2], 0, 1, 0.52),
+    boundedFloat(source[3], 0, 1, 1)
+  ];
+}
+
+function geometryObject(raw: unknown): WorldGeometryObject | null {
+  if (!isRecord(raw)) return null;
+  const kind = geometryKind(raw.kind || raw.type || raw.objectType);
+  if (!kind) return null;
+  const positionValue = raw.position ?? [raw.x, raw.y, raw.z];
+  const sizeValue = raw.size ?? raw.scale ?? [raw.width, raw.depth, raw.height];
+  const position = geometryVector(positionValue, [0, 0, 0], -WORLD_GEOMETRY_LIMITS.maxCoordinate, WORLD_GEOMETRY_LIMITS.maxCoordinate);
+  const size = geometryVector(sizeValue, [1, 1, 1], 0.01, WORLD_GEOMETRY_LIMITS.maxDimension);
+  const result: WorldGeometryObject = {
+    kind,
+    position,
+    size,
+    rotation: boundedFloat(raw.rotation ?? raw.azimuth, -Math.PI * 1000, Math.PI * 1000, 0),
+    ...(raw.id !== undefined ? { id: String(raw.id).slice(0, WORLD_GEOMETRY_LIMITS.maxLabelBytes) } : {}),
+    ...(raw.team !== undefined ? { team: boundedFloat(raw.team, -1, 7, -1) } : {}),
+    ...(geometryColor(raw.color) ? { color: geometryColor(raw.color) } : {}),
+    ...(raw.material !== undefined ? { material: String(raw.material).slice(0, WORLD_GEOMETRY_LIMITS.maxLabelBytes) } : {})
+  };
+  return Object.freeze(result);
+}
+
+/**
+ * Normalize geometry records produced by a future native/WASM decoder.
+ *
+ * The packed BZFlag database does not contain self-describing object records:
+ * managers must be decoded in native order.  This adapter therefore accepts a
+ * deliberately small object representation and validates it before it reaches
+ * the renderer.  It is the stable boundary for a WASM/native decoder and does
+ * not claim to decode compressed bytes by itself.
+ */
+export function normalizeWorldGeometry(input: unknown, options: Record<string, unknown> = {}): WorldGeometrySnapshot | null {
+  if (!isRecord(input)) return null;
+  const maxObjects = Math.min(
+    WORLD_GEOMETRY_LIMITS.maxObjects,
+    Math.max(1, Math.trunc(Number(options.maxObjects) || WORLD_GEOMETRY_LIMITS.maxObjects))
+  );
+  const sourceObjects: unknown[] = Array.isArray(input.objects) ? input.objects : [];
+  const objects: WorldGeometryObject[] = [];
+  for (const raw of sourceObjects) {
+    if (objects.length >= maxObjects) break;
+    const object = geometryObject(raw);
+    if (object) objects.push(object);
+  }
+  const sourceValue = String(input.source || "unknown");
+  const source: WorldGeometrySnapshot["source"] = sourceValue === "native-adapter" || sourceValue === "wasm-decoder" || sourceValue === "world-database"
+    ? sourceValue
+    : "unknown";
+  const mapVersionValue = Number(input.mapVersion);
+  return Object.freeze({
+    version: 1,
+    source,
+    mapVersion: Number.isInteger(mapVersionValue) ? Math.max(0, Math.min(0xffff, mapVersionValue)) : null,
+    objects: Object.freeze(objects),
+    objectCount: objects.length
+  });
 }
 
 function clampLimits(options: Record<string, unknown> = {}) {
@@ -197,6 +340,7 @@ export function summarizeWorldEnvelope(envelope: WorldEnvelope): WorldEnvelopeSu
       compression: "zlib",
       sections: [],
       objectDecoder: "native-bzflag-required",
+      geometryReady: false,
       error: envelope?.error || "Invalid BZFlag world envelope"
     });
   }
@@ -220,7 +364,8 @@ export function summarizeWorldEnvelope(envelope: WorldEnvelope): WorldEnvelopeSu
       "weapons",
       "entry-zones"
     ]),
-    objectDecoder: "native-bzflag-required"
+    objectDecoder: "native-bzflag-required",
+    geometryReady: false
   });
 }
 
@@ -384,6 +529,9 @@ const api = {
   DEFAULT_WORLD_LIMITS,
   parseWorldEnvelope,
   summarizeWorldEnvelope,
+  WORLD_GEOMETRY_KINDS,
+  WORLD_GEOMETRY_LIMITS,
+  normalizeWorldGeometry,
   decompressWorldEnvelope,
   WorldTransferAssembler,
   createWorldTransferAssembler

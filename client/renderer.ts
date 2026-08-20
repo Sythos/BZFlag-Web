@@ -41,13 +41,37 @@
     7: [0.94, 0.56, 0.18]
   });
 
+  const WORLD_KIND_COLORS = Object.freeze({
+    box: [0.32, 0.38, 0.46, 1],
+    wall: [0.26, 0.32, 0.40, 1],
+    pyramid: [0.42, 0.35, 0.25, 1],
+    base: [0.32, 0.45, 0.56, 1],
+    teleporter: [0.16, 0.72, 0.76, 0.9],
+    sphere: [0.48, 0.40, 0.62, 1],
+    cone: [0.56, 0.38, 0.28, 1],
+    arc: [0.36, 0.46, 0.56, 1],
+    mesh: [0.30, 0.36, 0.42, 1],
+    zone: [0.16, 0.42, 0.48, 0.58]
+  });
+
+  const FLAG_COLORS = Object.freeze({
+    "R*": [0.90, 0.16, 0.16, 1],
+    "G*": [0.18, 0.85, 0.30, 1],
+    "B*": [0.18, 0.42, 0.95, 1],
+    "P*": [0.72, 0.24, 0.88, 1],
+    "V": [0.78, 0.18, 0.74, 1],
+    "SW": [0.95, 0.78, 0.18, 1],
+    "L": [0.18, 0.82, 0.92, 1]
+  });
+
   const DEFAULT_SNAPSHOT = Object.freeze({
     revision: 0,
     localPlayerId: 0,
     players: [{ playerId: 0, team: 1, alive: true, position: [0, 0, 0], azimuth: 0, status: 1 }],
     shots: [],
     flags: [],
-    messages: []
+    messages: [],
+    worldGeometry: null
   });
 
   function finite(value, fallback = 0) {
@@ -63,6 +87,52 @@
   function teamColor(team, alpha = 1) {
     const color = TEAM_COLORS[Number(team)] || TEAM_COLORS[-1];
     return [color[0], color[1], color[2], alpha];
+  }
+
+  function flagColor(flagType) {
+    const value = String(flagType || "").slice(0, 2).toUpperCase();
+    const color = FLAG_COLORS[value] || [0.94, 0.86, 0.25, 1];
+    return color.slice();
+  }
+
+  function geometryColor(object) {
+    if (Array.isArray(object?.color) || ArrayBuffer.isView(object?.color)) {
+      const color = object.color;
+      return [finite(color[0], 0.4), finite(color[1], 0.45), finite(color[2], 0.5), finite(color[3], 1)];
+    }
+    if (Number.isFinite(Number(object?.team))) return teamColor(object.team, object.kind === "zone" ? 0.55 : 1);
+    const fallback = WORLD_KIND_COLORS[object?.kind] || WORLD_KIND_COLORS.mesh;
+    return fallback.slice();
+  }
+
+  function geometryObjects(snapshot) {
+    const source = snapshot?.worldGeometry || snapshot?.geometry;
+    const records = Array.isArray(source?.objects) ? source.objects.slice(0, 4096) : [];
+    const objects = [];
+    for (const record of records) {
+      if (!record || typeof record !== "object") continue;
+      const position = vector(record.position);
+      const size = vector(record.size).map((value) => Math.min(1_000_000, Math.max(0.01, Math.abs(value))));
+      const kind = String(record.kind || "mesh").toLowerCase();
+      objects.push({
+        id: record.id,
+        position: [position[0], position[2], position[1]],
+        size: [size[0], size[2], size[1]],
+        rotation: finite(record.rotation),
+        color: geometryColor({ ...record, kind }),
+        kind: `world-${kind}`
+      });
+      if (kind === "teleporter") {
+        objects.push({
+          position: [position[0], position[2] + size[2] * 0.55, position[1]],
+          size: [size[0] * 1.35, Math.max(0.08, size[2] * 0.08), size[1] * 1.35],
+          rotation: finite(record.rotation),
+          color: [0.28, 0.92, 0.96, 0.72],
+          kind: "world-teleporter-ring"
+        });
+      }
+    }
+    return objects;
   }
 
   function resizeCanvas(canvas) {
@@ -146,7 +216,10 @@
       players: Array.isArray(snapshot.players) && snapshot.players.length ? snapshot.players.slice(0, 216) : DEFAULT_SNAPSHOT.players,
       shots: Array.isArray(snapshot.shots) ? snapshot.shots.slice(0, 512) : [],
       flags: Array.isArray(snapshot.flags) ? snapshot.flags.slice(0, 256) : [],
-      messages: Array.isArray(snapshot.messages) ? snapshot.messages.slice(-128) : []
+      messages: Array.isArray(snapshot.messages) ? snapshot.messages.slice(-128) : [],
+      worldGeometry: snapshot.worldGeometry && Array.isArray(snapshot.worldGeometry.objects)
+        ? { ...snapshot.worldGeometry, objects: snapshot.worldGeometry.objects.slice(0, 4096) }
+        : null
     };
   }
 
@@ -179,34 +252,62 @@
     for (let z = -8; z <= 8; z += 2) {
       objects.push({ position: [0, -0.17, z], size: [24, 0.012, 0.012], color: [0.10, 0.26, 0.31, 0.65] });
     }
+    objects.push(...geometryObjects(snapshot));
     for (const player of snapshot.players) {
       const position = vector(player.position);
       const alive = player.alive !== false && (Number(player.status) & 1) !== 0;
       if (!alive) continue;
       const color = teamColor(player.team);
+      const rotation = finite(player.azimuth);
+      const lateralX = Math.cos(rotation) * 0.52;
+      const lateralZ = -Math.sin(rotation) * 0.52;
       objects.push({
         position: [position[0], Math.max(0.15, position[2] + 0.55), position[1]],
         size: [1.15, 0.65, 1.55],
-        rotation: finite(player.azimuth),
+        rotation,
         color,
-        kind: "tank"
+        kind: "tank-body",
+        playerId: player.playerId
       });
       objects.push({
         position: [position[0], Math.max(0.75, position[2] + 1.1), position[1]],
-        size: [0.18, 0.18, 1.0],
-        rotation: finite(player.azimuth),
-        color: [0.75, 0.82, 0.86, 1],
-        kind: "barrel"
+        size: [0.46, 0.28, 0.78],
+        rotation,
+        color: [0.66, 0.73, 0.78, 1],
+        kind: "tank-turret",
+        playerId: player.playerId
       });
+      objects.push({
+        position: [position[0], Math.max(0.86, position[2] + 1.25), position[1]],
+        size: [0.18, 0.18, 1.0],
+        rotation,
+        color: [0.75, 0.82, 0.86, 1],
+        kind: "tank-barrel",
+        playerId: player.playerId
+      });
+      for (const side of [-1, 1]) {
+        objects.push({
+          position: [position[0] + lateralX * side, Math.max(0.18, position[2] + 0.38), position[1] + lateralZ * side],
+          size: [0.20, 0.42, 1.40],
+          rotation,
+          color: [0.12, 0.16, 0.20, 1],
+          kind: "tank-track",
+          playerId: player.playerId
+        });
+      }
     }
     for (const shot of snapshot.shots) {
       const position = vector(shot.position);
-      objects.push({ position: [position[0], position[2] + 0.2, position[1]], size: [0.18, 0.18, 0.55], color: [1, 0.78, 0.18, 1], kind: "shot" });
+      const color = String(shot.flag || "").length > 0 ? flagColor(shot.flag) : teamColor(shot.team);
+      objects.push({ position: [position[0], position[2] + 0.2, position[1]], size: [0.18, 0.18, 0.55], color, kind: "shot" });
+      objects.push({ position: [position[0], position[2] + 0.2, position[1]], size: [0.34, 0.34, 0.34], color: [color[0], color[1], color[2], 0.22], kind: "shot-glow" });
     }
     for (const flag of snapshot.flags) {
       const position = vector(flag.position || flag.landingPosition);
-      objects.push({ position: [position[0], position[2] + 0.9, position[1]], size: [0.12, 1.8, 0.12], color: [0.94, 0.86, 0.25, 1], kind: "flag" });
-      objects.push({ position: [position[0] + 0.32, position[2] + 1.5, position[1]], size: [0.65, 0.35, 0.08], color: [0.95, 0.18, 0.22, 1], kind: "flag-cloth" });
+      const color = flagColor(flag.flagType);
+      objects.push({ position: [position[0], position[2] + 0.9, position[1]], size: [0.12, 1.8, 0.12], color: [0.80, 0.80, 0.84, 1], kind: "flag-pole" });
+      objects.push({ position: [position[0] + 0.32, position[2] + 1.5, position[1]], size: [0.65, 0.35, 0.08], color, kind: "flag-cloth" });
+      objects.push({ position: [position[0], position[2] + 0.08, position[1]], size: [0.42, 0.08, 0.42], color: [color[0], color[1], color[2], 0.72], kind: "flag-base" });
     }
     if (snapshot.players.length === 1 && snapshot.revision === 0) {
       const pulse = Math.sin(time * 0.002) * 0.25;
@@ -458,5 +559,5 @@
     try { return makeWebGLRenderer(canvas); } catch (error) { console.warn("No supported browser renderer is available", error); return { mode: "unavailable", setWorldState() {}, handleInput() {}, stop() {} }; }
   }
 
-  window.BZFlagWebRenderer = { createRenderer, makeWebGLRenderer, makeWebGPURenderer, resizeCanvas, sceneObjects };
+  window.BZFlagWebRenderer = { createRenderer, makeWebGLRenderer, makeWebGPURenderer, resizeCanvas, sceneObjects, geometryObjects };
 })();

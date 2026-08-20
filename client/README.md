@@ -31,7 +31,8 @@ media and the sixteen locale catalogues from the pinned BZFlag 2.4.31 baseline.
 
 Version `0.1.0` is an MVP/prototype, not a complete playable BZFlag client. It
 currently wires the connection form, session handoff, initial keyboard and audio
-controls, renderer selection and bounded bridge framing. Complete world
+controls, renderer selection, bounded bridge framing and a deterministic scene
+pipeline for validated world geometry, tanks, shots and flags. Complete world
 simulation, native protocol/gameplay parity, full asset integration and verified
 official-server interoperability remain milestones. This document describes the
 current boundary and must not be read as a production compatibility claim.
@@ -103,6 +104,22 @@ geometry. WebGL2 is the practical compatibility path for browsers that do not
 yet expose a usable WebGPU adapter. Both paths are designed to share the same
 scene data, input layer, asset pipeline and gateway session. WebAssembly may be
 added for isolated routines only when measurement shows a meaningful benefit.
+
+==> World geometry boundary
+
+The renderer consumes the bounded `worldGeometry` snapshot produced by the
+state layer. Boxes, walls, pyramids, bases, teleporters, spheres, cones, arcs,
+meshes and zones are normalized into safe browser scene objects; tank bodies,
+turrets, tracks, barrels, shots, flag poles and flag cloth are rendered from the
+same authoritative entity snapshot. This is a real scene-data path, not a
+claim that every native BZFlag obstacle is already decoded.
+
+The compressed BZFlag world database is not self-describing at the individual
+object level. Its dynamic-colour, material, transform, obstacle, link, weapon
+and entry-zone managers must be decoded in native order. `world.ts` therefore
+validates the native envelope and exposes a strict adapter for a future native
+or WebAssembly decoder; until that decoder is supplied, the client keeps the
+safe world summary and does not invent geometry from compressed bytes.
 
 The input layer keeps the native keyboard mapping as its intended compatibility
 source of truth. The MVP includes the initial controls and the F11 guidance;

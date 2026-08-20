@@ -72,7 +72,8 @@ for (const [path, requiredText] of files) {
 
   const footer = source.match(/<footer\b[\s\S]*?<\/footer>/i)?.[0] || "";
   if (path === "client/index.html" || path === "server/index.html") {
-    if (!footer.includes('href="https://www.sythos.net/"') || !footer.includes("https://www.sythos.net/")) {
+    const creditLinkPattern = /<a\b[^>]*\bhref\s*=\s*(["'])https:\/\/www\.sythos\.net\/\1[^>]*>/i;
+    if (!creditLinkPattern.test(footer)) {
       failures.push(`${path}: the bottom-right credit must link to https://www.sythos.net/`);
     }
   }

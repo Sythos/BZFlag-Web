@@ -102,6 +102,8 @@ SOFTWARE.
   const CHANNEL_UDP = 1;
   const WEBSOCKET_SUBPROTOCOL = "bzflag-web-v1";
   const TOKEN_SUBPROTOCOL_PREFIX = "bzflag-token.";
+  // The primary bindings below mirror BZFlag 2.4.31's ActionBinding defaults.
+  // WASD and F/T remain browser-friendly aliases for the existing web UI.
   const COMMAND_MAP: Record<string, string> = {
     ArrowUp: "move-forward",
     KeyW: "move-forward",
@@ -111,9 +113,19 @@ SOFTWARE.
     KeyA: "turn-left",
     ArrowRight: "turn-right",
     KeyD: "turn-right",
-    Space: "fire",
+    Enter: "fire",
+    Space: "drop-flag",
     KeyF: "drop-flag",
-    Tab: "toggle-scoreboard",
+    Tab: "jump",
+    F12: "exit",
+    KeyI: "restart",
+    KeyP: "pause",
+    Digit9: "auto-pilot",
+    KeyN: "send-all",
+    KeyM: "send-team",
+    Comma: "send-nemesis",
+    Period: "send-recipient",
+    KeyZ: "send-admin",
     KeyT: "open-chat",
     Escape: "open-menu"
   };
@@ -641,9 +653,9 @@ SOFTWARE.
   ): () => void {
     const pressed = new Set();
     const sendCommand = (command: string, phase: string, key: string): void => {
+      const state = getInputState(command, phase, key) || {};
       const protocol = window.BZFlagWebProtocol;
       if (socket?.readyState === WebSocket.OPEN && protocol?.encodeInput) {
-        const state = getInputState(command, phase, key) || {};
         const payload = protocol.encodeInput(command, phase, key, state);
         if (payload) {
           const channel = getChannel(command, phase, state, payload);
@@ -832,7 +844,7 @@ SOFTWARE.
       }
       return { command, phase };
     }, (command = "") => {
-      const udpCommands = new Set(["move-forward", "move-backward", "turn-left", "turn-right", "fire"]);
+      const udpCommands = new Set(["move-forward", "move-backward", "turn-left", "turn-right", "fire", "shot-end"]);
       return protocolSession.udpReady && udpCommands.has(command) ? CHANNEL_UDP : CHANNEL_TCP;
     });
     if ("serviceWorker" in navigator) {

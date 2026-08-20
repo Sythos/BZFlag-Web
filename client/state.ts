@@ -21,6 +21,8 @@
  * SOFTWARE.
  */
 
+import { normalizeWorldGeometry, type WorldGeometrySnapshot } from "./world.js";
+
 const MSG_ACCEPT = 0x6163;
 const MSG_ALIVE = 0x616c;
 const MSG_ADD_PLAYER = 0x6170;
@@ -250,6 +252,7 @@ export class WorldState {
   private readonly messages: MessageState[];
   private localPlayerId: number | null;
   private connection: ConnectionState;
+  private worldGeometry: WorldGeometrySnapshot | null;
   private revision: number;
   private lastPacketAt: number;
 
@@ -266,6 +269,7 @@ export class WorldState {
     this.messages = [];
     this.localPlayerId = null;
     this.connection = { phase: "connecting", accepted: false, rejected: null };
+    this.worldGeometry = null;
     this.revision = 0;
     this.lastPacketAt = 0;
   }
@@ -368,11 +372,35 @@ export class WorldState {
     return { applied, code: event.code, revision: this.revision, localPlayerId: this.localPlayerId };
   }
 
+  /**
+   * Apply geometry emitted by the optional native/WASM world decoder.
+   *
+   * The network protocol delivers the packed world database separately from
+   * entity packets.  Keeping this explicit prevents an incomplete decoder from
+   * being mistaken for an authoritative map while still allowing the renderer
+   * to consume validated boxes, walls, bases, and teleporters.
+   */
+  setWorldGeometry(input: unknown): { applied: boolean; objectCount: number; revision: number } {
+    const geometry = normalizeWorldGeometry(input);
+    if (!geometry) return { applied: false, objectCount: 0, revision: this.revision };
+    this.worldGeometry = geometry;
+    this.#touch();
+    return { applied: true, objectCount: geometry.objectCount, revision: this.revision };
+  }
+
+  clearWorldGeometry(): { applied: boolean; revision: number } {
+    if (this.worldGeometry === null) return { applied: false, revision: this.revision };
+    this.worldGeometry = null;
+    this.#touch();
+    return { applied: true, revision: this.revision };
+  }
+
   snapshot(): {
     revision: number;
     lastPacketAt: number;
     connection: ConnectionState;
     localPlayerId: number | null;
+    worldGeometry: WorldGeometrySnapshot | null;
     players: PlayerState[];
     shots: ShotState[];
     flags: FlagState[];
@@ -383,6 +411,7 @@ export class WorldState {
       lastPacketAt: this.lastPacketAt,
       connection: this.connection,
       localPlayerId: this.localPlayerId,
+      worldGeometry: this.worldGeometry,
       players: [...this.players.values()],
       shots: [...this.shots.values()],
       flags: [...this.flags.values()],

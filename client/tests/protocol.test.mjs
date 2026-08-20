@@ -170,6 +170,37 @@ assert(protocol.encodeInput("fire", "start") === null, "fire without firing stat
 assert(protocol.encodeInput("drop-flag", "start") === null, "drop flag without position must be suppressed");
 const aliveInput = protocol.encodeInput("alive", "start");
 assert(aliveInput && packetCode(aliveInput) === protocol.MSG_ALIVE, "alive packet was not produced");
+const restartInput = protocol.encodeInput("restart", "end");
+assert(restartInput && packetCode(restartInput) === protocol.MSG_ALIVE, "native restart release did not produce MsgAlive");
+assert(protocol.encodeInput("restart", "start") === null, "native restart fired before key release");
+
+const nativeShotEnd = protocol.encodeShotEnd({ playerId: 7, shotId: -3, reason: 2 });
+assert(nativeShotEnd && packetCode(nativeShotEnd) === protocol.MSG_SHOT_END, "shot end was not encoded as MsgShotEnd");
+assert(packetLength(nativeShotEnd) === protocol.SHOT_END_PAYLOAD_BYTES, "shot end payload has an unexpected size");
+assert(protocol.encodeInput("shot-end", "start", "", { playerId: 7, shotId: 3, reason: 1 }), "shot-end input was not routed");
+assert(protocol.encodeShotEnd({ playerId: protocol.NO_PLAYER, shotId: 1, reason: 0 }) === null, "reserved player ID was accepted for shot end");
+
+const capture = protocol.encodeCaptureFlag("red");
+assert(capture && packetCode(capture) === protocol.MSG_CAPTURE_FLAG, "capture flag was not encoded as MsgCaptureFlag");
+assert(new DataView(capture.buffer).getUint16(4) === protocol.TEAM_BY_NAME.red, "capture team was not encoded in network order");
+assert(protocol.encodeInput("capture-flag", "start", "", { team: "blue" }), "capture input was not routed");
+const transfer = protocol.encodeTransferFlag(7, protocol.SERVER_PLAYER);
+assert(transfer && packetCode(transfer) === protocol.MSG_TRANSFER_FLAG, "flag transfer was not encoded as MsgTransferFlag");
+assert(packetLength(transfer) === protocol.TRANSFER_FLAG_PAYLOAD_BYTES, "flag transfer payload has an unexpected size");
+assert(protocol.encodeTransferFlag(7, protocol.NO_PLAYER) === null, "reserved player ID was accepted for flag transfer");
+const teleport = protocol.encodeTeleport(0, 0xffff);
+assert(teleport && packetCode(teleport) === protocol.MSG_TELEPORT, "teleport was not encoded as MsgTeleport");
+assert(protocol.encodeTeleport(-1, 2) === null, "negative teleport index was accepted");
+assert(packetCode(protocol.encodeNewRabbit()) === protocol.MSG_NEW_RABBIT, "new-rabbit command was not encoded");
+assert(new DataView(protocol.encodeAutoPilot(true).buffer).getUint8(4) === 1, "autopilot enable flag was not encoded");
+
+const teamMessage = protocol.encodeInput("send-team", "start", "KeyM", { team: "red", message: "team hello" });
+assert(teamMessage && packetCode(teamMessage) === protocol.MSG_MESSAGE, "native team chat was not encoded");
+assert(new DataView(teamMessage.buffer).getUint8(4) === protocol.FIRST_TEAM - protocol.TEAM_BY_NAME.red, "team chat target was not derived from the native team address");
+const adminMessage = protocol.encodeInput("send-admin", "start", "KeyZ", { message: "admin hello" });
+assert(adminMessage && new DataView(adminMessage.buffer).getUint8(4) === protocol.ADMIN_PLAYERS, "admin chat target was not encoded");
+assert(protocol.encodeInput("chat", "start", "", { message: "" }) === null, "empty chat message was accepted");
+assert(protocol.encodeInput("send-recipient", "start", "", { target: protocol.NO_PLAYER, message: "invalid" }) === null, "invalid chat target was accepted");
 
 const addBody = new Uint8Array(protocol.ADD_PLAYER_PAYLOAD_BYTES);
 const addView = new DataView(addBody.buffer);

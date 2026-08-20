@@ -47,6 +47,7 @@
   const MSG_GAME_SETTINGS = 0x6773;
   const MSG_KILLED = 0x6b6c;
   const MSG_MESSAGE = 0x6d67;
+  const MSG_NEW_RABBIT = 0x6e52;
   const MSG_NEGOTIATE_FLAGS = 0x6e66;
   const MSG_PAUSE = 0x7061;
   const MSG_PLAYER_UPDATE = 0x7075;
@@ -58,6 +59,7 @@
   const MSG_SHOT_BEGIN = 0x7362;
   const MSG_SHOT_END = 0x7365;
   const MSG_TELEPORT = 0x7470;
+  const MSG_TRANSFER_FLAG = 0x7466;
   const MSG_TEAM_UPDATE = 0x7475;
   const MSG_UDP_LINK_REQUEST = 0x6f66;
   const MSG_UDP_LINK_ESTABLISHED = 0x6f67;
@@ -69,6 +71,9 @@
   const DEFAULT_SERVER_VERSION = "BZFS0221";
   const MAX_WORLD_BYTES = 64 * 1024 * 1024;
   const TANK_PLAYER = 0;
+  const SERVER_PLAYER = 253;
+  const ADMIN_PLAYERS = 252;
+  const FIRST_TEAM = 251;
   const ALL_PLAYERS = 254;
   const NO_PLAYER = 255;
   const TEAM_BY_NAME = Object.freeze({
@@ -118,6 +123,10 @@
   const MESSAGE_SERVER_HEADER_BYTES = 3;
   const MESSAGE_PAYLOAD_BYTES = MESSAGE_SERVER_HEADER_BYTES + MESSAGE_BYTES;
   const SHOT_END_PAYLOAD_BYTES = 1 + 2 + 2;
+  const CAPTURE_FLAG_PAYLOAD_BYTES = 2;
+  const TRANSFER_FLAG_PAYLOAD_BYTES = 2;
+  const TELEPORT_PAYLOAD_BYTES = 4;
+  const BOOLEAN_PAYLOAD_BYTES = 1;
   const PLAYER_UPDATE_FIXED_BYTES = 4 + 1 + 4 + 2 + 12 + 12 + 4 + 4;
   const FIRE_PAYLOAD_BYTES = 4 + 1 + 2 + 12 + 12 + 4 + 2 + 2 + 4;
   const GAME_SETTINGS_PAYLOAD_BYTES = 30;
@@ -148,6 +157,30 @@
 
   function clampInteger(value, minimum, maximum, fallback = minimum) {
     return Math.trunc(clamp(value, minimum, maximum, fallback));
+  }
+
+  // Unlike the display/UI sanitizers above, wire-level input fields must not
+  // silently turn an absent or malformed value into a real player/flag ID.
+  // Returning null lets encodeInput suppress an unsafe command instead.
+  function boundedInteger(value, minimum, maximum) {
+    const number = Number(value);
+    return Number.isInteger(number) && number >= minimum && number <= maximum ? number : null;
+  }
+
+  function boundedPlayerId(value) {
+    return boundedInteger(value, 0, NO_PLAYER - 1);
+  }
+
+  function resolveTeam(value) {
+    if (typeof value === "string" && Object.prototype.hasOwnProperty.call(TEAM_BY_NAME, value)) {
+      return TEAM_BY_NAME[value];
+    }
+    return boundedInteger(value, TEAM_BY_NAME.automatic, TEAM_BY_NAME.hunter);
+  }
+
+  function hasVector(value) {
+    return (Array.isArray(value) || ArrayBuffer.isView(value)) && value.length >= 3 &&
+      Number.isFinite(Number(value[0])) && Number.isFinite(Number(value[1])) && Number.isFinite(Number(value[2]));
   }
 
   function vector(value, fallback = [0, 0, 0]) {
@@ -423,8 +456,8 @@
   }
 
   function encodeUDPLinkRequest(playerId) {
-    const id = clampInteger(playerId, 0, NO_PLAYER, -1);
-    if (id < 0) return null;
+    const id = boundedPlayerId(playerId);
+    if (id === null) return null;
     return encodePacket(MSG_UDP_LINK_REQUEST, new Uint8Array([id]));
   }
 
@@ -511,8 +544,8 @@
   }
 
   function encodePlayerUpdate(state = {}) {
-    const playerId = clampInteger(state.playerId, 0, 255, -1);
-    if (playerId < 0) return null;
+    const playerId = boundedPlayerId(state.playerId);
+    if (playerId === null) return null;
     const status = clampInteger(state.status, 0, 0x07ff, PLAYER_STATUS.alive);
     const packet = new Uint8Array(PLAYER_UPDATE_FIXED_BYTES +
       (status & PLAYER_STATUS.jumpJets ? 2 : 0) +
@@ -554,8 +587,8 @@
   }
 
   function encodeShotBegin(firing = {}) {
-    const playerId = clampInteger(firing.playerId, 0, 255, -1);
-    if (playerId < 0) return null;
+    const playerId = boundedPlayerId(firing.playerId);
+    if (playerId === null) return null;
     const packet = new Uint8Array(FIRE_PAYLOAD_BYTES);
     const view = new DataView(packet.buffer);
     let offset = 0;
@@ -587,17 +620,85 @@
   }
 
   function encodeGrabFlag(flagIndex) {
+    const index = boundedInteger(flagIndex, 0, 0xffff);
+    if (index === null) return null;
     const packet = new Uint8Array(2);
-    new DataView(packet.buffer).setUint16(0, clampInteger(flagIndex, 0, 0xffff, 0));
+    new DataView(packet.buffer).setUint16(0, index);
     return encodePacket(MSG_GRAB_FLAG, packet);
   }
 
   function encodeMessage(target = ALL_PLAYERS, message = "") {
+    const destination = boundedInteger(target, 0, 0xff);
+    if (destination === null) return null;
     const packet = new Uint8Array(MESSAGE_OUTGOING_PAYLOAD_BYTES);
     const view = new DataView(packet.buffer);
-    view.setUint8(0, clampInteger(target, 0, 0xff, ALL_PLAYERS));
+    view.setUint8(0, destination);
     writeFixedString(view, 1, MESSAGE_BYTES, message);
     return encodePacket(MSG_MESSAGE, packet);
+  }
+
+  function encodeShotEnd(shot = {}) {
+    const playerId = boundedPlayerId(shot.playerId ?? shot.source);
+    const shotId = boundedInteger(shot.shotId, -0x8000, 0x7fff);
+    const reason = boundedInteger(shot.reason, 0, 0xffff);
+    if (playerId === null || shotId === null || reason === null) return null;
+    const packet = new Uint8Array(SHOT_END_PAYLOAD_BYTES);
+    const view = new DataView(packet.buffer);
+    view.setUint8(0, playerId);
+    view.setInt16(1, shotId);
+    view.setUint16(3, reason);
+    return encodePacket(MSG_SHOT_END, packet);
+  }
+
+  function encodeCaptureFlag(team) {
+    const value = resolveTeam(team);
+    if (value === null) return null;
+    const packet = new Uint8Array(CAPTURE_FLAG_PAYLOAD_BYTES);
+    new DataView(packet.buffer).setUint16(0, value & 0xffff);
+    return encodePacket(MSG_CAPTURE_FLAG, packet);
+  }
+
+  function encodeTeleport(from, to) {
+    const source = boundedInteger(from, 0, 0xffff);
+    const destination = boundedInteger(to, 0, 0xffff);
+    if (source === null || destination === null) return null;
+    const packet = new Uint8Array(TELEPORT_PAYLOAD_BYTES);
+    const view = new DataView(packet.buffer);
+    view.setUint16(0, source);
+    view.setUint16(2, destination);
+    return encodePacket(MSG_TELEPORT, packet);
+  }
+
+  function encodeTransferFlag(from, to) {
+    const source = boundedPlayerId(from);
+    const destination = boundedPlayerId(to);
+    if (source === null || destination === null) return null;
+    return encodePacket(MSG_TRANSFER_FLAG, new Uint8Array([source, destination]));
+  }
+
+  function encodeNewRabbit() {
+    return encodeNoPayload(MSG_NEW_RABBIT);
+  }
+
+  function encodeAutoPilot(enabled) {
+    return encodePacket(MSG_AUTO_PILOT, new Uint8Array([enabled ? 1 : 0]));
+  }
+
+  function encodePause(paused) {
+    return encodePacket(MSG_PAUSE, new Uint8Array([paused ? 1 : 0]));
+  }
+
+  function messageTargetForCommand(command, state) {
+    if (command === "send-all") return ALL_PLAYERS;
+    if (command === "send-admin") return ADMIN_PLAYERS;
+    if (command === "send-team") {
+      const team = resolveTeam(state.team);
+      return team === null || team === TEAM_BY_NAME.noTeam ? null : FIRST_TEAM - team;
+    }
+    if (command === "send-nemesis" || command === "send-recipient") {
+      return boundedPlayerId(state.target ?? state.targetPlayerId);
+    }
+    return boundedInteger(state.target ?? state.targetPlayerId ?? ALL_PLAYERS, 0, 0xff);
   }
 
   function encodeInput(command, phase = "start", key = "", state = {}) {
@@ -609,16 +710,36 @@
       return encodePlayerUpdate(state);
     }
     if (command === "fire" && phase === "start") return state.firing ? encodeShotBegin(state.firing) : null;
-    if (command === "drop-flag" && phase === "start") return state.position ? encodeDropFlag(state.position) : null;
-    if (command === "grab-flag" && phase === "start") return encodeGrabFlag(state.flagIndex);
-    if (command === "alive" && phase === "start") return encodePacket(MSG_ALIVE);
-    if (command === "exit" && phase === "start") return encodePacket(MSG_EXIT);
-    if (command === "pause" && phase === "start") {
-      const packet = new Uint8Array([state.paused ? 1 : 0]);
-      return encodePacket(MSG_PAUSE, packet);
+    if ((command === "drop" || command === "drop-flag") && phase === "start") {
+      return hasVector(state.position) ? encodeDropFlag(state.position) : null;
     }
-    // Scoreboard, chat and menu are local UI actions until their respective
-    // stateful protocol adapters are connected.
+    if ((command === "grab" || command === "grab-flag") && phase === "start") {
+      return encodeGrabFlag(state.flagIndex);
+    }
+    if ((command === "capture" || command === "capture-flag") && phase === "start") {
+      return encodeCaptureFlag(state.team);
+    }
+    if (command === "chat" || command === "message" || command.startsWith("send-")) {
+      if (phase !== "start" || typeof state.message !== "string" || state.message.length === 0) return null;
+      const target = messageTargetForCommand(command, state);
+      return target === null ? null : encodeMessage(target, state.message);
+    }
+    if ((command === "alive" && phase === "start") || (command === "restart" && phase === "end")) {
+      return encodePacket(MSG_ALIVE);
+    }
+    if (command === "exit" && phase === "start") return encodePacket(MSG_EXIT);
+    if ((command === "pause" || command === "auto-pilot" || command === "autopilot") && phase === "start") {
+      return command === "pause" ? encodePause(state.paused) : encodeAutoPilot(state.autopilot ?? state.enabled);
+    }
+    if (command === "new-rabbit" && phase === "start") return encodeNewRabbit();
+    if (command === "teleport" && phase === "start") return encodeTeleport(state.from, state.to);
+    if (command === "transfer-flag" && phase === "start") {
+      return encodeTransferFlag(state.from ?? state.playerId, state.to ?? state.targetPlayerId);
+    }
+    if (command === "shot-end" && phase === "start") return encodeShotEnd(state);
+    // Jump, scoreboard, chat opener and menu actions remain local UI/physics
+    // actions. Their native wire commands are emitted only after a complete
+    // stateful payload is available.
     return null;
   }
 
@@ -914,6 +1035,11 @@
     MSG_REMOVE_PLAYER,
     MSG_SHOT_BEGIN,
     MSG_SHOT_END,
+    MSG_AUTO_PILOT,
+    MSG_CAPTURE_FLAG,
+    MSG_NEW_RABBIT,
+    MSG_TELEPORT,
+    MSG_TRANSFER_FLAG,
     MSG_FLAG_UPDATE,
     MSG_TEAM_UPDATE,
     MSG_UDP_LINK_REQUEST,
@@ -940,6 +1066,13 @@
     FLAG_PAYLOAD_BYTES,
     MESSAGE_PAYLOAD_BYTES,
     SHOT_END_PAYLOAD_BYTES,
+    CAPTURE_FLAG_PAYLOAD_BYTES,
+    TRANSFER_FLAG_PAYLOAD_BYTES,
+    TELEPORT_PAYLOAD_BYTES,
+    BOOLEAN_PAYLOAD_BYTES,
+    SERVER_PLAYER,
+    ADMIN_PLAYERS,
+    FIRST_TEAM,
     ALL_PLAYERS,
     NO_PLAYER,
     PLAYER_STATUS,
@@ -957,8 +1090,15 @@
     encodeUDPLinkEstablished,
     encodePlayerUpdate,
     encodeShotBegin,
+    encodeShotEnd,
     encodeDropFlag,
     encodeGrabFlag,
+    encodeCaptureFlag,
+    encodeTeleport,
+    encodeTransferFlag,
+    encodeNewRabbit,
+    encodeAutoPilot,
+    encodePause,
     encodeMessage,
     encodeInput,
     readPacketCode,

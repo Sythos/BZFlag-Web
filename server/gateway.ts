@@ -1168,6 +1168,10 @@ class GatewaySession {
 
   #sendTargetData(channel: BridgeChannel, data: Buffer): void {
     if (this.closed) return;
+    // UDP can become readable before the TCP identity preflight completes.
+    // Never expose datagrams from an unverified endpoint to the browser: the
+    // target is relay-eligible only after its BZFS greeting has been checked.
+    if (channel === CHANNEL_UDP && !this.targetHandshakeVerified) return;
     this.lastActivity = Date.now();
     if (channel === CHANNEL_UDP && data.length > DEFAULT_MAX_UDP_BYTES) {
       return this.#fail('UDP datagram exceeds the protocol limit', 1009);

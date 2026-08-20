@@ -110,6 +110,9 @@ requireMarker(ci, ".github/workflows/ci.yml", "timeout 12m npx --prefix");
 requireMarker(ci, ".github/workflows/ci.yml", "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a");
 
 const container = workflows.get("container.yml") || "";
+requireMarker(container, ".github/workflows/container.yml", "docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e");
+requireMarker(container, ".github/workflows/container.yml", "docker/login-action@dbcb813823bdd20940b903addbd779551569679f");
+requireMarker(container, ".github/workflows/container.yml", "docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a");
 requireMarker(container, ".github/workflows/container.yml", "context: server");
 requireMarker(container, ".github/workflows/container.yml", "file: server/Dockerfile");
 requireMarker(container, ".github/workflows/container.yml", "IMAGE_NAME: ghcr.io/sythos/bzflag-web-server");
@@ -123,6 +126,10 @@ if (/push:\s*\$\{\{\s*github\.event_name\s*!=\s*'pull_request'\s*\}\}/.test(cont
 }
 
 const release = workflows.get("release.yml") || "";
+requireMarker(release, ".github/workflows/release.yml", "docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e");
+requireMarker(release, ".github/workflows/release.yml", "docker/login-action@dbcb813823bdd20940b903addbd779551569679f");
+requireMarker(release, ".github/workflows/release.yml", "docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302");
+requireMarker(release, ".github/workflows/release.yml", "docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a");
 requireMarker(workflows.get("compliance.yml") || "", ".github/workflows/compliance.yml", "node-version: 26.7.0");
 requireMarker(workflows.get("compliance.yml") || "", ".github/workflows/compliance.yml", "node .github/scripts/check-runtime-versions.mjs");
 requireMarker(workflows.get("compliance.yml") || "", ".github/workflows/compliance.yml", "node .github/scripts/check-readmes.mjs");

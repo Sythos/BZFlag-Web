@@ -53,6 +53,21 @@ assert(envelope.compressed[0] === 0x78, "compressed world payload was not retain
 const summary = world.summarizeWorldEnvelope(envelope);
 assert(summary.valid && summary.compression === "zlib", "world envelope summary is incomplete");
 assert(summary.sections.includes("obstacles") && summary.objectDecoder === "native-bzflag-required", "world manager summary lost its safe decoder boundary");
+assert(summary.geometryReady === false, "compressed world summary must not claim decoded geometry");
+
+const geometry = world.normalizeWorldGeometry({
+  source: "wasm-decoder",
+  mapVersion: 3,
+  objects: [
+    { id: "box-1", kind: "box", position: [10, 20, 3], size: [4, 6, 2], rotation: 0.5, team: 2 },
+    { kind: "basebuilding", position: [0, 0, 0], size: [8, 8, 3], color: [0.2, 0.4, 0.8, 1] },
+    { kind: "unknown", position: [999, 999, 999] },
+    { kind: "wall", position: [0, 0, 0], size: [Number.POSITIVE_INFINITY, 4, 4] }
+  ]
+});
+assert(geometry?.objectCount === 3, "world geometry adapter did not retain only recognized bounded objects");
+assert(geometry?.source === "wasm-decoder" && geometry.objects[1].kind === "base", "world geometry aliases were not normalized");
+assert(geometry?.objects[2].size[0] === 1, "non-finite geometry dimensions were not bounded");
 
 const assembler = world.createWorldTransferAssembler({ maxChunkBytes: 8, maxChunks: 8 });
 let offset = 0;

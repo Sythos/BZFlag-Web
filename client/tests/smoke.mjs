@@ -49,6 +49,8 @@ const requiredFiles = [
   "dist/service-worker.js",
   "service-worker.js",
   "tests/protocol.test.mjs",
+  "tests/renderer.test.mjs",
+  "tests/state.test.mjs",
   "tests/world.test.mjs",
   "manifest.webmanifest",
   "assets/favicon.svg",
@@ -161,6 +163,8 @@ if (!index.includes('id="gateway-endpoint"') || !index.includes('id="gateway-end
 }
 
 await import("./protocol.test.mjs");
+await import("./renderer.test.mjs");
+await import("./state.test.mjs");
 await import("./world.test.mjs");
 await import("./i18n.test.mjs");
 await import("./service-worker.test.mjs");
