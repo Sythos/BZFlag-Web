@@ -34,6 +34,7 @@ import {
   createGateway,
   decodeBridgeMessage,
   encodeBridgeMessage,
+  loadConfig,
   normalizeConfig,
 } from './gateway.js';
 
@@ -185,6 +186,19 @@ test('trustProxy requires an exact IP peer allowlist', () => {
   assert.deepEqual(config.trustedProxyPeers, ['127.0.0.1']);
 });
 
+test('configuration paths stay relative and the default target policy is official-only', () => {
+  const config = loadConfig({
+    path: './config.example.json',
+    env: {
+      BZFLAG_WEB_CONFIG: '',
+      BZFLAG_WEB_SESSION_TOKEN: 'test-token',
+    },
+  });
+  assert.equal(config.configPath, './config.example.json');
+  assert.equal(config.allowCustomServers, false);
+  assert.equal(config.servers[0]?.kind, 'official');
+});
+
 test('gateway exposes health and forwards TCP and UDP traffic only to an allowlisted target', async (t: TestContext) => {
   const tcpTarget = createTcpServer((socket) => {
     socket.on('data', (data: Buffer | string) => socket.write(Buffer.concat([Buffer.from('tcp-reply:'), Buffer.isBuffer(data) ? data : Buffer.from(data)])));
@@ -298,4 +312,40 @@ test('gateway closes an incomplete frame after the parser deadline and bounds co
   fragmented.connection.write(maskedWebSocketFrame(Buffer.from([0x02]), 0, false));
   fragmented.connection.write(maskedWebSocketFrame(Buffer.from([0x03]), 0, true));
   await waitForSocketClose(fragmented.connection);
+});
+
+test('gateway bounds complete frame and control-frame rates', async (t: TestContext) => {
+  const target = createTcpServer();
+  const targetPort = await listenTcp(target);
+  t.after(() => target.close());
+  const gateway = createGateway({
+    host: '127.0.0.1',
+    port: 0,
+    sessionToken: 'test-token',
+    allowedOrigins: ['http://localhost:3000'],
+    servers: [{ id: 'official-test', host: '127.0.0.1', port: targetPort }],
+    limits: {
+      maxFrameBytes: 1024,
+      maxFramesPerSecond: 8,
+      maxControlFramesPerSecond: 1,
+      parserTimeoutMs: 1000,
+      idleTimeoutMs: 5000,
+    },
+  });
+  const address = await gateway.start();
+  t.after(() => gateway.stop());
+
+  const controlFrames = await awaitableSocket(address.port);
+  controlFrames.connection.write(maskedWebSocketFrame(Buffer.from('one'), 0x9));
+  controlFrames.connection.write(maskedWebSocketFrame(Buffer.from('two'), 0x9));
+  await waitForSocketClose(controlFrames.connection);
+
+  const oversized = await awaitableSocket(address.port);
+  const header = Buffer.alloc(8);
+  header[0] = 0x82;
+  header[1] = 0x80 | 126;
+  header.writeUInt16BE(1025, 2);
+  Buffer.from([0x12, 0x34, 0x56, 0x78]).copy(header, 4);
+  oversized.connection.write(header);
+  await waitForSocketClose(oversized.connection);
 });
