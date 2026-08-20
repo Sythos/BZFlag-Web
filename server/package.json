@@ -1,6 +1,6 @@
 {
   "name": "@sythos/bzflag-web-gateway",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "A WebSocket bridge with a dependency-free Node.js runtime for allowlisted BZFlag servers.",
   "type": "module",

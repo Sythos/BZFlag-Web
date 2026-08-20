@@ -20,7 +20,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-const CACHE_NAME = "bzflag-web-client-v0.1.0";
+const CACHE_NAME = "bzflag-web-client-v0.1.1";
 const ASSET_MANIFEST = "./assets/asset-manifest.json";
 const STATIC_ASSETS = [
   "./",

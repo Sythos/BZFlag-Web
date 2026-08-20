@@ -50,7 +50,7 @@ so that users can distinguish the web release from the game baseline.
 
 ==> Current implementation boundary
 
-Version `0.1.0` is an MVP/prototype. It provides the connection form, session
+Version `0.1.1` is an MVP/prototype. It provides the connection form, session
 handoff, initial keyboard and audio controls, bounded WebSocket bridge framing,
 and a WebGPU/WebGL2 capability preview. It is not yet a complete playable
 BZFlag client: full world simulation, native protocol/gameplay parity, complete
