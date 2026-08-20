@@ -79,17 +79,17 @@ for (const [name, source] of workflows) {
   }
 }
 
-const checkoutNode24Marker = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1";
+const checkoutActionNode24Marker = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1";
 for (const [name, source] of workflows) {
   if (source.includes("actions/checkout@")) {
-    requireMarker(source, join(workflowDirectory, name), checkoutNode24Marker);
+    requireMarker(source, join(workflowDirectory, name), checkoutActionNode24Marker);
   }
 }
 
-const setupNodeNode24Marker = "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020";
+const setupNodeActionNode24Marker = "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020";
 for (const [name, source] of workflows) {
   if (source.includes("actions/setup-node@")) {
-    requireMarker(source, join(workflowDirectory, name), setupNodeNode24Marker);
+    requireMarker(source, join(workflowDirectory, name), setupNodeActionNode24Marker);
   }
 }
 
