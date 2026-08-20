@@ -77,6 +77,7 @@ requireMarker(ci, ".github/workflows/ci.yml", "npm run typecheck --prefix server
 requireMarker(ci, ".github/workflows/ci.yml", "npm run typecheck --prefix client");
 requireMarker(ci, ".github/workflows/ci.yml", "npm test --prefix server");
 requireMarker(ci, ".github/workflows/ci.yml", "npm test --prefix client");
+requireMarker(ci, ".github/workflows/ci.yml", "node .github/scripts/check-readmes.mjs");
 
 const container = workflows.get("container.yml") || "";
 requireMarker(container, ".github/workflows/container.yml", "context: server");
@@ -90,11 +91,13 @@ if (/push:\s*\$\{\{\s*github\.event_name\s*!=\s*'pull_request'\s*\}\}/.test(cont
 
 const release = workflows.get("release.yml") || "";
 requireMarker(workflows.get("compliance.yml") || "", ".github/workflows/compliance.yml", "node-version: 26.x");
+requireMarker(workflows.get("compliance.yml") || "", ".github/workflows/compliance.yml", "node .github/scripts/check-readmes.mjs");
 requireMarker(release, ".github/workflows/release.yml", "node-version: 26.x");
 requireMarker(release, ".github/workflows/release.yml", "needs:\n      - validate-ref\n      - verify");
 requireMarker(release, ".github/workflows/release.yml", "context: server");
 requireMarker(release, ".github/workflows/release.yml", "file: server/Dockerfile");
 requireMarker(release, ".github/workflows/release.yml", "node --check");
+requireMarker(release, ".github/workflows/release.yml", "node .github/scripts/check-readmes.mjs");
 if (/find release -maxdepth 1 -type f[^\n]*>\s*release\/SHA256SUMS\.txt/.test(release)
   && !/!\s*-name\s+SHA256SUMS\.txt/.test(release)) {
   failures.push(".github/workflows/release.yml: SHA256SUMS.txt must not hash itself");

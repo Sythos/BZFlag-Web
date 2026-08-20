@@ -58,7 +58,7 @@ if (!(await exists("client/assets/upstream/README.md"))) {
 if (await exists("README.md")) {
   const readme = (await readFile("README.md", "utf8")).toLowerCase();
   const requiredReadmeMarkers = [
-    "# bzflag web client",
+    "bzflag web client",
     "html5",
     "node.js",
     "github.com/sythos/bzflag-web/issues",

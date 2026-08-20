@@ -1,4 +1,5 @@
 <!--
+SPDX-License-Identifier: MIT
 Copyright (c) 2026 Sythos (https://www.sythos.net)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -20,24 +21,36 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 -->
 
-# BZFlag Web Gateway
+=> BZFlag Web Gateway
 
-The gateway is a small TypeScript service whose compiled Node.js runtime has no production dependencies. It lets the browser client reach a BZFlag server through a WebSocket connection. It keeps the browser transport separate from the native BZFlag transport: browser messages arrive as masked WebSocket binary frames, and the gateway forwards their payloads to an allowlisted TCP or UDP endpoint. Data coming back from the game server is wrapped in the same envelope and sent to the browser.
+The gateway is a small TypeScript service that gives the browser client a
+controlled WebSocket boundary to an official BZFlag server. Its compiled Node.js
+runtime uses only built-in modules: browser messages arrive as masked binary
+WebSocket frames, the gateway validates the session and forwards bounded payloads
+to an allowlisted TCP or UDP endpoint, and data received from the game server is
+returned in the same bridge envelope.
 
-It is a bridge, not a BZFlag game server. The image and process in this directory do not include `bzfs`, maps, plug-ins, or any upstream game executable. The default configuration only permits entries marked `official`; entries marked `custom` are intentionally rejected until an operator explicitly enables them.
+This is a transport bridge, not a BZFlag game server. The package does not
+contain `bzfs`, maps, plug-ins or any upstream game executable. The default
+configuration permits only entries marked `official`; entries marked `custom`
+remain rejected until a future operator-approved policy enables them.
 
-## Requirements
+==> Requirements
 
-- Node.js 22 or a newer supported stable release.
-- npm (used to compile the TypeScript source; the runtime itself has no package dependency).
-- A browser client served from an origin listed in `allowedOrigins`.
-- Network access from the gateway host to the selected official BZFlag server.
+=> Node.js 26 or a newer supported stable release. CI and the Docker image use
+   Node.js 26.
+=> npm for the TypeScript 7.0.2 build and development checks. The production
+   runtime has no third-party dependency.
+=> A browser client served from an origin listed exactly in `allowedOrigins`.
+=> Network access from the gateway host to the selected official BZFlag server.
 
-The runtime uses only Node.js built-ins. The TypeScript compiler and Node.js type definitions are development dependencies used by `npm ci` and `npm run build`.
+The runtime uses only Node.js built-ins. The TypeScript compiler and Node.js type
+definitions are development dependencies installed by `npm ci` and used by
+`npm run build`.
 
-## Local installation
+==> Local installation
 
-From this directory:
+Run these commands from `server/`:
 
 ```sh
 cp ./config.example.json ./config.json
@@ -46,41 +59,61 @@ npm ci
 npm run build
 ```
 
-Put the generated value in `config.json` as `sessionToken`, replace `replace-with-an-approved-official-host` with a server you are authorised to use, and start the service:
+Put the generated value in `config.json` as `sessionToken`, replace
+`replace-with-an-approved-official-host` with a server you are authorised to
+use, and start the service:
 
 ```sh
 npm start
 ```
 
-On Windows PowerShell, use `Copy-Item ./config.example.json ./config.json` for the first step. The gateway binds to `127.0.0.1:8080` by default. Use `http://127.0.0.1:8080/healthz` to check it. Pass another file with `node ./dist/gateway.js --config ./config.json` or set `BZFLAG_WEB_CONFIG`.
+On Windows PowerShell, use `Copy-Item ./config.example.json ./config.json` for
+the first step. The default listener is `127.0.0.1:8080`; check it with
+`http://127.0.0.1:8080/healthz`. An alternate configuration can be supplied with
+`node ./dist/gateway.js --config ./config.json` or the `BZFLAG_WEB_CONFIG`
+environment variable.
 
-The gateway never prints the bearer token. For a stable production secret, set `BZFLAG_WEB_SESSION_TOKEN` through the service manager or container secret store, or put it in the private `config.json`. If no token is supplied, a random token is generated for that process and is intentionally not recoverable from logs. Do not put the token in a public repository or a client bundle. A token in the browser URL is visible to the browser and to local browser tooling, so use a short-lived reverse-proxy/session design if the deployment needs stronger credential isolation.
+The gateway never prints the bearer token. For a stable production secret, set
+`BZFLAG_WEB_SESSION_TOKEN` through the service manager or container secret store,
+or keep it in the private `config.json`. If no token is supplied, a random token
+is generated for that process and is intentionally not recoverable from logs.
+Never commit the token or place it in a public client bundle. A token in a
+browser URL is visible to the browser and local browser tooling, so deployments
+that need stronger isolation should use a short-lived reverse-proxy/session
+design.
 
-## Configuration
+==> Configuration
 
-`config.example.json` is deliberately explicit. The important fields are:
+`config.example.json` is deliberately explicit. The principal fields are:
 
 | Field | Meaning |
 | --- | --- |
-| `host`, `port` | Local listener. Keep the listener private until TLS and proxy rules are ready. |
+| `host`, `port` | Local listener. Keep it private until TLS and proxy rules are ready. |
 | `sessionToken` | Required browser session token. |
-| `allowedOrigins` | Exact `http://` or `https://` browser origins. Avoid `*`. |
-| `servers` | The only target addresses the gateway will ever dial. |
-| `allowCustomServers` | Must stay `false` for the official-server-only deployment. |
-| `limits` | Frame, control-frame, continuation, queue, throughput, handshake, parser, session-count, and idle-time limits. |
-| `trustProxy`, `trustedProxyPeers` | Forwarded client IPs are used only when `trustProxy` is `true` **and** the direct peer IP is listed exactly in `trustedProxyPeers`. |
+| `allowedOrigins` | Exact `http://` or `https://` browser origins. Do not use `*`. |
+| `servers` | The only target addresses the gateway may dial. |
+| `allowCustomServers` | Keep `false` for official-server-only operation. |
+| `limits` | Frame, control-frame, continuation, queue, throughput, handshake, parser, session and idle limits. |
+| `trustProxy`, `trustedProxyPeers` | Forwarded client IPs are used only when the direct peer is an exact trusted proxy address. |
 
-The browser supplies the target id, not a host or port:
+The browser submits a target identifier rather than a host or port:
 
 ```text
 ws(s)://gateway.example.test/bridge?server=official-main&token=YOUR_SESSION_TOKEN
 ```
 
-The service does not trust `Host`, client-supplied target addresses, or `X-Forwarded-For` by default. `trustProxy` is rejected unless `trustedProxyPeers` contains at least one literal IP address. Even when enabled, an `X-Forwarded-For` value is accepted only when the direct TCP peer is in that exact list and the first forwarded value is itself a literal IP. CIDR ranges and proxy hostnames are deliberately not accepted. The forwarded address only changes the IP used for per-client session counting.
+The service does not trust `Host`, client-supplied target addresses or
+`X-Forwarded-For` by default. `trustProxy` is rejected unless
+`trustedProxyPeers` contains at least one literal IP address. When enabled, a
+forwarded address is accepted only from an exact trusted peer and only when the
+first forwarded value is itself a literal IP. CIDR ranges and proxy hostnames
+are deliberately not accepted. The forwarded address affects only per-client
+session counting.
 
-## WebSocket bridge envelope
+==> WebSocket bridge envelope
 
-New clients send one binary WebSocket message per bridge message. The first eight bytes are:
+New clients send one binary WebSocket message per bridge message. The first
+eight bytes are:
 
 | Bytes | Value |
 | --- | --- |
@@ -90,30 +123,50 @@ New clients send one binary WebSocket message per bridge message. The first eigh
 | 6-7 | Reserved flags, currently `0` |
 | 8+ | Raw BZFlag payload |
 
-The gateway returns the same envelope for data received from the target. A message without the `BZWB` marker is accepted as a raw TCP compatibility message. New clients should always use the envelope so that UDP traffic is explicit. A TCP stream chunk is not a BZFlag application packet boundary; the client must retain the normal BZFlag framing rules.
+The gateway returns the same envelope for data received from the target. A
+message without the `BZWB` marker is accepted as a raw TCP compatibility
+message; new clients should always use the envelope so that UDP traffic remains
+explicit. A TCP stream chunk is not a BZFlag application-packet boundary, so
+the client must retain the normal BZFlag framing rules.
 
-The default metadata is BZFlag `2.4.31` with BZFS protocol `0221`, inherited from the pinned upstream baseline. The gateway is transport-transparent and does not claim that a newer or differently configured server is compatible merely because a socket opened. Future custom-server work must add explicit protocol negotiation and operator approval.
+The default metadata is BZFlag `2.4.31` with BZFS protocol `0221`, inherited
+from the pinned upstream baseline. The gateway is transport-transparent and
+does not claim compatibility with a newer or differently configured server just
+because a socket opens. Future custom-server support must add explicit protocol
+negotiation and operator approval.
 
-The WebSocket limits are intentionally separate: `maxFramesPerSecond` covers every client frame, `maxControlFramesPerSecond` covers ping/pong/close control frames, `maxContinuationFrames` counts continuation frames after the first non-final binary frame, and `maxContinuationBytes` caps the assembled fragmented message. `handshakeTimeoutMs` covers the HTTP upgrade parser and `parserTimeoutMs` covers a frame that remains incomplete after its first bytes arrive.
+The limits are intentionally separate. `maxFramesPerSecond` covers every client
+frame, `maxControlFramesPerSecond` covers ping/pong/close frames,
+`maxContinuationFrames` counts continuation frames after a non-final binary
+frame, and `maxContinuationBytes` caps the assembled fragmented message.
+`handshakeTimeoutMs` covers the HTTP upgrade parser and `parserTimeoutMs` covers
+a frame that remains incomplete after its first bytes arrive.
 
-## Security properties
+==> Security properties
 
-- Exact Origin allowlisting is required for every WebSocket upgrade.
-- A constant-time session-token comparison is required for every bridge session.
-- Target host and ports come only from the operator configuration allowlist.
-- Custom entries are denied while `allowCustomServers` is `false`.
-- Frame size, buffered output, message rate, byte rate, total sessions, per-IP sessions, and idle sessions are bounded.
-- Handshake and incomplete-frame parser deadlines are enforced; the WebSocket socket also has a real idle timeout.
-- Total frame rate, control-frame rate, fragmented-message frame count, and fragmented-message byte count are bounded independently.
-- Client text frames, unmasked frames, unsupported extensions, unknown bridge channels, and reserved envelope flags are rejected.
-- The process does not log tokens or game payloads.
-- The health endpoint contains only version and count metadata and is intended for a local reverse proxy/container check.
+=> Exact Origin allowlisting is required for every WebSocket upgrade.
+=> A constant-time session-token comparison is required for every bridge session.
+=> Target hosts and ports come only from the operator configuration allowlist.
+=> Custom entries are denied while `allowCustomServers` is `false`.
+=> Frame size, buffered output, message rate, byte rate, total sessions,
+   per-IP sessions and idle sessions are bounded.
+=> Handshake and incomplete-frame parser deadlines are enforced, and the
+   WebSocket socket has a real idle timeout.
+=> Frame rate, control-frame rate, fragmented-message count and fragmented-byte
+   budgets are bounded independently.
+=> Client text frames, unmasked frames, unsupported extensions, unknown bridge
+   channels and reserved envelope flags are rejected.
+=> The process does not log tokens or game payloads.
+=> The health endpoint exposes only version and count metadata for a local
+   reverse-proxy or container check.
 
-The gateway is not a complete security boundary by itself. Deploy it behind TLS/WSS, restrict firewall access, keep the allowlist short, rotate tokens, and run the repository security/compliance checks before a public release.
+The gateway is not a complete security boundary by itself. Deploy it behind
+TLS/WSS, restrict firewall access, keep the allowlist short, rotate tokens and
+run the repository security and compliance checks before a public release.
 
-## Docker
+==> Docker
 
-Build from this directory:
+Build from `server/`:
 
 ```sh
 docker build -t sythos/bzflag-web-gateway:local .
@@ -123,19 +176,36 @@ docker run --rm --name bzflag-web-gateway \
   sythos/bzflag-web-gateway:local
 ```
 
-The multi-stage image compiles TypeScript in a disposable build stage and the final image contains only the compiled gateway, its installation page, `package.json`, and the MIT license. Configuration is mounted at runtime. The container uses the unprivileged `node` user and exposes a `/healthz` Docker health check. TLS is normally terminated by Apache or Nginx; direct TLS is also supported by supplying `tls.keyFile` and `tls.certFile` in a configuration file mounted into the container.
+The multi-stage image uses `node:26-alpine` to compile TypeScript in a
+disposable build stage. The final image contains only the compiled gateway, its
+installation page, `package.json` and the standalone MIT license. Configuration
+is mounted at runtime. The container runs as the unprivileged `node` user and
+exposes a `/healthz` Docker health check. TLS normally terminates at Apache or
+Nginx; direct TLS is also supported through `tls.keyFile` and `tls.certFile` in
+a configuration file mounted into the container.
 
-## Testing
+==> Testing
 
 ```sh
-npm test
 npm run check
+npm test
 ```
 
-The test suite uses local TCP/UDP sockets only. It does not contact or scan public BZFlag servers.
+The suite uses local TCP and UDP fixtures only. It does not contact or scan
+public BZFlag servers. Release CI additionally builds the TypeScript output,
+checks the emitted JavaScript, validates the HTML entry points and verifies
+license, workflow and provenance invariants.
 
-## License and upstream relationship
+==> License and upstream relationship
 
-The new gateway code, documentation, page, and container definition are original work by Sythos and are available under the MIT License in [`LICENSE-MIT`](./LICENSE-MIT). BZFlag itself remains a separate upstream project under its original LGPL-2.1/MPL-2.0 terms. This gateway is not an official BZFlag distribution and is not affiliated with the BZFlag project.
+The gateway code, documentation, installation page and container definition are
+original work by Sythos and are available under the MIT License in
+[`LICENSE-MIT`](./LICENSE-MIT). BZFlag remains a separate upstream project under
+its original LGPL-2.1/MPL-2.0 terms; the repository-level texts are available at
+[`../COPYING`](../COPYING), [`../COPYING.LGPL`](../COPYING.LGPL) and
+[`../COPYING.MPL`](../COPYING.MPL). Upstream notices and provenance are recorded
+in [`../NOTICE`](../NOTICE), [`../AUTHORS`](../AUTHORS) and
+[`../ATTRIBUTION.md`](../ATTRIBUTION.md). This gateway is not an official BZFlag
+distribution and is not affiliated with the BZFlag project.
 
 Sythos (https://www.sythos.net) [BZFlag 2.4.31 / BZFS protocol 0221]

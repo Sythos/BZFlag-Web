@@ -21,33 +21,34 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 -->
 
-# BZFlag Web Client
+=> BZFlag Web Client
 
-This directory is a static HTML5 client MVP/prototype package. It contains the
-connection screen (`index.html`), the independent game window
-(`web_game_run.html`), a WebGPU capability/rendering preview with a WebGL2
-fallback, binary BZFlag bridge framing, the PWA service worker, local upstream
-media and all sixteen locale catalogues from the pinned BZFlag 2.4.31 baseline.
+This directory is a static HTML5 client package whose TypeScript source compiles
+to browser-ready JavaScript. It contains the connection page (`index.html`), the
+independent game window (`web_game_run.html`), WebGPU rendering with a WebGL2
+fallback, binary BZFlag bridge framing, a PWA service worker, local upstream
+media and the sixteen locale catalogues from the pinned BZFlag 2.4.31 baseline.
 
-The current `0.1.0` client is not yet a full playable BZFlag implementation.
-It wires the connection form, session handoff, initial keyboard/audio controls,
-renderer selection and bounded bridge session. Complete world simulation,
-native protocol/gameplay parity, full asset/media integration and verified
-official-server interoperability remain milestones. This README documents the
-current prototype boundary and must not be read as a production compatibility
-claim.
+Version `0.1.0` is an MVP/prototype, not a complete playable BZFlag client. It
+currently wires the connection form, session handoff, initial keyboard and audio
+controls, renderer selection and bounded bridge framing. Complete world
+simulation, native protocol/gameplay parity, full asset integration and verified
+official-server interoperability remain milestones. This document describes the
+current boundary and must not be read as a production compatibility claim.
 
 The package is not a native BZFlag executable and does not include `bzfs`. A
-Node.js gateway in `../server/` is required for a browser session because web
-pages cannot open the native BZFlag TCP/UDP sockets. The gateway must be
-configured with an allowlist entry such as `official-main`; arbitrary hosts
-and custom servers are rejected by its default policy.
+Node.js gateway in [`../server/`](../server/) is required because a browser page
+cannot open native BZFlag TCP or UDP sockets. The gateway must use an allowlist
+entry such as `official-main`; arbitrary hosts and custom servers are rejected by
+the default policy.
 
-## Local installation
+==> Local installation
 
 Serve this directory from a static HTTP server. `localhost` is suitable for
-development; HTTPS is required for WebGPU and service-worker/PWA behaviour on
-deployed origins.
+development; HTTPS is required for WebGPU and service-worker/PWA behaviour on a
+deployed origin.
+
+Run these commands from `client/`:
 
 ```sh
 npm ci
@@ -55,73 +56,104 @@ npm run build
 npx --yes serve . -l 4173
 ```
 
-Open `http://127.0.0.1:4173/index.html`, enter the server id configured in the
-gateway, the gateway endpoint (normally `/bridge`) and the short-lived gateway
-session token supplied by the operator. Press **Connect** to open
-`web_game_run.html`. The page also includes a browser fullscreen button and a
-note recommending **F11**.
+Open `http://127.0.0.1:4173/index.html`, enter the server identifier configured
+in the gateway, the gateway endpoint (normally `/bridge`) and the short-lived
+gateway session token supplied by the operator. Select **Connect** to open
+`web_game_run.html`. The setup page also includes a browser fullscreen button and
+recommends `F11`.
 
-The token is kept only in the current tab's `sessionStorage`. The BZFlag server
-password is never saved unless the player explicitly checks **Save password on
-this device**; when unchecked it is removed from local preferences. The web
-client does not log credentials or send them to analytics.
+The gateway token is kept only in the current tab's `sessionStorage`. The BZFlag
+server password is never saved unless the player explicitly enables **Save
+password on this device**; when disabled, it is removed from local preferences.
+The client does not log credentials or send them to analytics.
 
-## Apache
+==> Apache deployment
 
 Point the virtual host or an `Alias` at this directory. The included
-`deploy/apache.conf` enables the MIME types used by the manifest and service
-worker and keeps versioned assets cacheable. Enable HTTPS before advertising
-the PWA or WebGPU path.
+[`deploy/apache.conf`](deploy/apache.conf) enables the manifest and service
+worker MIME behaviour and keeps versioned assets cacheable. Enable HTTPS before
+advertising the PWA or WebGPU path.
 
-## Nginx
+==> Nginx deployment
 
-Use the included `deploy/nginx.conf` inside the relevant `server` block, or
-copy its `location` directives into an existing site. Keep the static client
-and the Node.js gateway on a known origin, or list the exact client origin in
-the gateway's `allowedOrigins` array. When the gateway is on another origin,
-use `wss://` and configure the reverse proxy for WebSocket upgrades.
+Use [`deploy/nginx.conf`](deploy/nginx.conf) inside the relevant `server` block,
+or copy its `location` directives into an existing site. Keep the static client
+and Node.js gateway on a known origin, or list the exact client origin in the
+gateway's `allowedOrigins` array. When the gateway uses another origin, use
+`wss://` and configure the reverse proxy for WebSocket upgrades.
 
-## Browser paths
+==> Browser rendering and media
 
-- WebGPU is preferred when `navigator.gpu` and an adapter are available.
-- WebGL2 is selected automatically when WebGPU is unavailable.
-- Current Chromium, Gecko and WebKit-based browsers are supported as far as
-  their secure-context and GPU capabilities allow.
-- Audio starts after the user's Connect gesture and can be muted in the game
-  window. The renderer reports its selected path in the sidebar.
-- The service worker caches the shell and local assets but cannot make an
-  online BZFlag session playable without a network connection.
+=> WebGPU is preferred when `navigator.gpu` and a usable adapter are available.
+=> WebGL2 is selected automatically when WebGPU is unavailable.
+=> Current Chromium, Gecko and WebKit-based browsers are supported as far as
+   their secure-context and GPU capabilities allow.
+=> TypeScript 7.0.2 is the client source of truth; `dist/` contains the emitted
+   browser JavaScript used by the static pages.
+=> Audio starts after the user's Connect gesture and can be muted in the game
+   window. HTML5 media assets remain local whenever their licenses permit.
+=> The service worker caches the shell and local assets, but an offline cache
+   cannot make an online BZFlag session playable without a network connection.
 
-## Upstream assets and localization
+WebGPU is the modern high-throughput path for buffers, pipelines and effect
+geometry. WebGL2 is the practical compatibility path for browsers that do not
+yet expose a usable WebGPU adapter. Both paths are designed to share the same
+scene data, input layer, asset pipeline and gateway session. WebAssembly may be
+added for isolated routines only when measurement shows a meaningful benefit.
 
-`assets/upstream/` is a publishable asset-only subset copied from upstream
-BZFlag revision `59b3ef44fa4538296be8b7f5eeafc2a4e57d0b74`. It includes the
-runtime textures, WAV effects, font bitmaps and the sixteen locale catalogues:
-`cs_CZ`, `da`, `de`, `en_US_l33t`, `en_US_redneck`, `es`, `fr`, `it`, `kg`,
-`lt`, `nl`, `pt`, `ru`, `sk`, `sv` and `xx`. These files retain their upstream
-notices and are not relicensed as MIT. Read `assets/upstream/README.md`,
-`../NOTICE`, `../ATTRIBUTION.md` and the preserved `../COPYING*` files before
-redistribution.
+The input layer keeps the native keyboard mapping as its intended compatibility
+source of truth. The MVP includes the initial controls and the F11 guidance;
+complete native command coverage, pointer lock and touch/gamepad extensions are
+follow-up work. Browser audio starts from a user gesture to comply with the
+autoplay policy.
 
-## Development checks
+==> PWA, cache and localization
+
+The application shell is installable as a PWA. A versioned service worker is
+copied to the client root during the TypeScript build so that Apache and Nginx
+can grant it the normal site-wide scope. Cache entries are namespaced by web
+package version, and `localStorage` is reserved for non-sensitive preferences
+and the explicit password-persistence choice. Deployments that prohibit password
+storage can disable that option in their configuration.
+
+The localization layer follows the sixteen locale catalogues present in the
+pinned upstream baseline: `cs_CZ`, `da`, `de`, `en_US_l33t`, `en_US_redneck`,
+`es`, `fr`, `it`, `kg`, `lt`, `nl`, `pt`, `ru`, `sk`, `sv` and `xx`. Translation
+keys and locale data remain separate from renderer and network code.
+
+==> Upstream assets and licensing
+
+`assets/upstream/` is a publishable asset-only subset copied from upstream BZFlag
+revision `59b3ef44fa4538296be8b7f5eeafc2a4e57d0b74`. It contains runtime
+textures, WAV effects, font bitmaps and locale catalogues. These files retain
+their upstream notices and are not relicensed as MIT. Read the local asset
+manifest [`assets/upstream/README.md`](assets/upstream/README.md),
+[`../NOTICE`](../NOTICE), [`../ATTRIBUTION.md`](../ATTRIBUTION.md) and the
+preserved [`../COPYING*`](../COPYING) files before redistribution.
+
+==> Development checks
 
 The TypeScript files are the source of truth. The build emits browser-ready
 JavaScript in `dist/` and copies the compiled service worker to the client root
-so Apache and Nginx can grant it the normal site-wide scope.
+so Apache and Nginx can provide its normal scope.
 
 ```sh
 npm run check
 npm test
 ```
 
-The gateway tests use local TCP/UDP fixtures only. A real official-server
-interoperability test requires an operator-provided allowlist and credentials;
-CI never scans or contacts public servers.
+The client smoke tests validate the local asset and HTML closure. Gateway tests
+use local TCP and UDP fixtures only. A real official-server interoperability
+test requires an operator-provided allowlist and credentials; CI never scans or
+contacts public BZFlag servers.
 
-## Credits and license
+==> Credits and license
 
-The web client and its original browser code are MIT-licensed by Sythos
+The original browser code and client packaging are MIT-licensed by Sythos
 ([https://www.sythos.net](https://www.sythos.net)). Upstream BZFlag assets and
-catalogues remain under their original LGPL-2.1/MPL-2.0 terms. Visible pages
-identify the compatibility baseline as `[BZFS 2.4.31]` and show the Sythos
-credit.
+catalogues remain under their original LGPL-2.1/MPL-2.0 terms. The complete
+project-level notices are in [`../LICENSE-MIT`](../LICENSE-MIT),
+[`../COPYING.LGPL`](../COPYING.LGPL), [`../COPYING.MPL`](../COPYING.MPL),
+[`../NOTICE`](../NOTICE), [`../AUTHORS`](../AUTHORS) and
+[`../ATTRIBUTION.md`](../ATTRIBUTION.md). Visible pages identify the
+compatibility reference as `[BZFS 2.4.31]` and show the Sythos credit.

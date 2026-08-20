@@ -21,7 +21,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 -->
 
-# Upstream BZFlag client assets
+=> Upstream BZFlag client assets
 
 This directory contains the runtime artwork, sounds, font data and locale
 catalogues copied from BZFlag upstream at revision

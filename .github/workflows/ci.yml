@@ -84,6 +84,9 @@ jobs:
       - name: Validate static HTML entry points
         run: node .github/scripts/validate-html.mjs
 
+      - name: Validate publishable README documents
+        run: node .github/scripts/check-readmes.mjs
+
       - name: Validate workflow structure and release invariants
         run: node .github/scripts/check-workflows.mjs
 

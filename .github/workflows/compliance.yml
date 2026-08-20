@@ -50,6 +50,9 @@ jobs:
       - name: Check licenses, attribution and headers
         run: node .github/scripts/check-compliance.mjs
 
+      - name: Validate publishable README documents
+        run: node .github/scripts/check-readmes.mjs
+
       - name: Check workflow references are immutable
         shell: bash
         run: |
