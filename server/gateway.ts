@@ -1159,6 +1159,13 @@ class GatewaySession {
 
   #forwardMessage(message: BridgeMessage): void {
     if (this.closed) return;
+    // Keep the relay invariant local to the final write path as well as the
+    // connection state machine: no client payload may reach either transport
+    // unless the target has completed the expected BZFS greeting and its UDP
+    // channel is ready.
+    if (!this.targetHandshakeVerified || !this.udpReady) {
+      return this.#fail('Target BZFS handshake is not verified', 1003);
+    }
     if (message.channel === CHANNEL_TCP) {
       if (!this.tcp || this.tcp.destroyed || !this.tcp.writable) return this.#fail('TCP connection is unavailable');
       if (this.tcp.writableLength + message.payload.length > this.gateway.config.limits.maxBufferedBytes) {

@@ -464,6 +464,70 @@ test('gateway rejects a non-BZFS target before forwarding queued client bytes', 
   assert.deepEqual(targetBytes, BZFLAG_CONNECT_HEADER);
 });
 
+test('gateway withholds queued TCP and UDP traffic until the BZFS identity greeting is valid', async (t: TestContext) => {
+  let targetSocket: Socket | null = null;
+  let handshakeSeenResolve: (() => void) | null = null;
+  const handshakeSeen = new Promise<void>((resolve) => {
+    handshakeSeenResolve = resolve;
+  });
+  const tcpTarget = createTcpServer((socket) => {
+    targetSocket = socket;
+    socket.on('data', (data: Buffer | string) => {
+      const bytes = Buffer.isBuffer(data) ? data : Buffer.from(data);
+      if (bytes.subarray(0, BZFLAG_CONNECT_HEADER.length).equals(BZFLAG_CONNECT_HEADER)) {
+        handshakeSeenResolve?.();
+      }
+    });
+  });
+  const tcpPort = await listenTcp(tcpTarget);
+  t.after(() => tcpTarget.close());
+
+  const receivedUdp: Buffer[] = [];
+  const udpTarget = createSocket('udp4');
+  udpTarget.on('message', (data: Buffer) => receivedUdp.push(Buffer.from(data)));
+  const udpPort = await listenUdp(udpTarget);
+  t.after(() => udpTarget.close());
+
+  const gateway = createGateway({
+    host: '127.0.0.1',
+    port: 0,
+    sessionToken: 'test-token',
+    allowPrivateAddresses: true,
+    allowedOrigins: ['http://localhost:3000'],
+    servers: [{ id: 'official-test', kind: 'official', host: '127.0.0.1', port: tcpPort, udpPort }],
+    limits: { targetHandshakeTimeoutMs: 1000, idleTimeoutMs: 5000 },
+  });
+  const address = await gateway.start();
+  t.after(() => gateway.stop());
+
+  const connection = await awaitableSocket(address.port);
+  assert.match(connection.response, /^HTTP\/1\.1 101 Switching Protocols/);
+  await handshakeSeen;
+  const queuedPacket = Buffer.from('queued-before-bzfs');
+  connection.connection.write(maskedWebSocketFrame(encodeBridgeMessage(CHANNEL_UDP, queuedPacket)));
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.deepEqual(receivedUdp, [], 'UDP payload reached the target before the BZFS greeting');
+
+  const connectedTarget = targetSocket as Socket | null;
+  assert.ok(connectedTarget, 'the TCP target did not accept the gateway connection');
+  connectedTarget.write(Buffer.concat([Buffer.from('BZFS0221', 'ascii'), Buffer.from([7])]));
+  const greetingFrame = await readServerFrame(connection.connection, connection.remainder);
+  assert.deepEqual(decodeBridgeMessage(greetingFrame.payload).payload, Buffer.concat([Buffer.from('BZFS0221', 'ascii'), Buffer.from([7])]));
+  await new Promise<void>((resolve, reject) => {
+    const deadline = setTimeout(() => reject(new Error('Queued UDP payload was not released after BZFS validation')), 1000);
+    const check = (): void => {
+      if (receivedUdp.some((packet: Buffer) => Buffer.compare(packet, queuedPacket) === 0)) {
+        clearTimeout(deadline);
+        resolve();
+        return;
+      }
+      setTimeout(check, 10).unref?.();
+    };
+    check();
+  });
+  connection.connection.end(maskedWebSocketFrame(Buffer.alloc(0), 8));
+});
+
 test('gateway closes a session before TCP write buffering can exceed its limit', async (t: TestContext) => {
   const target = createTcpServer();
   const targetPort = await listenTcp(target);
