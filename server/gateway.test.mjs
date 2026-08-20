@@ -1,0 +1,229 @@
+/*
+ * Copyright (c) 2026 Sythos (https://www.sythos.net)
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
+
+import { createConnection, createServer as createTcpServer } from 'node:net';
+import { createSocket } from 'node:dgram';
+import { randomBytes } from 'node:crypto';
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  CHANNEL_TCP,
+  CHANNEL_UDP,
+  createGateway,
+  decodeBridgeMessage,
+  encodeBridgeMessage,
+} from './gateway.mjs';
+
+function listenTcp(server) {
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      server.off('error', reject);
+      resolve(server.address().port);
+    });
+  });
+}
+
+function listenUdp(socket) {
+  return new Promise((resolve, reject) => {
+    socket.once('error', reject);
+    socket.bind(0, '127.0.0.1', () => {
+      socket.off('error', reject);
+      resolve(socket.address().port);
+    });
+  });
+}
+
+function maskedWebSocketFrame(payload, opcode = 2) {
+  const body = Buffer.isBuffer(payload) ? payload : Buffer.from(payload);
+  const mask = Buffer.from([0x12, 0x34, 0x56, 0x78]);
+  let header;
+  if (body.length < 126) {
+    header = Buffer.from([0x80 | opcode, 0x80 | body.length]);
+  } else if (body.length <= 0xffff) {
+    header = Buffer.alloc(4);
+    header[0] = 0x80 | opcode;
+    header[1] = 0x80 | 126;
+    header.writeUInt16BE(body.length, 2);
+  } else {
+    header = Buffer.alloc(10);
+    header[0] = 0x80 | opcode;
+    header[1] = 0x80 | 127;
+    header.writeBigUInt64BE(BigInt(body.length), 2);
+  }
+  const masked = Buffer.from(body);
+  for (let index = 0; index < masked.length; index += 1) masked[index] ^= mask[index % 4];
+  return Buffer.concat([header, mask, masked]);
+}
+
+function parseServerFrame(buffer) {
+  if (buffer.length < 2) return null;
+  const first = buffer[0];
+  const second = buffer[1];
+  let length = second & 0x7f;
+  let offset = 2;
+  if (length === 126) {
+    if (buffer.length < 4) return null;
+    length = buffer.readUInt16BE(2);
+    offset = 4;
+  } else if (length === 127) {
+    if (buffer.length < 10) return null;
+    length = Number(buffer.readBigUInt64BE(2));
+    offset = 10;
+  }
+  if (buffer.length < offset + length) return null;
+  return { opcode: first & 0x0f, payload: buffer.subarray(offset, offset + length), rest: buffer.subarray(offset + length) };
+}
+
+function readServerFrame(socket) {
+  return new Promise((resolve, reject) => {
+    let buffer = Buffer.alloc(0);
+    const onData = (chunk) => {
+      buffer = Buffer.concat([buffer, chunk]);
+      const frame = parseServerFrame(buffer);
+      if (!frame) return;
+      socket.off('data', onData);
+      resolve(frame);
+    };
+    socket.on('data', onData);
+    socket.once('error', reject);
+  });
+}
+
+function awaitableSocket(port) {
+  return new Promise((resolve, reject) => {
+    const connection = createConnection({ host: '127.0.0.1', port });
+    let response = Buffer.alloc(0);
+    const onData = (chunk) => {
+      response = Buffer.concat([response, chunk]);
+      const marker = response.indexOf('\r\n\r\n');
+      if (marker < 0) return;
+      connection.off('data', onData);
+      resolve({ connection, response: response.subarray(0, marker + 4).toString('ascii'), remainder: response.subarray(marker + 4) });
+    };
+    connection.on('data', onData);
+    connection.once('error', reject);
+    connection.on('connect', () => {
+      connection.write([
+        'GET /bridge?server=official-test&token=test-token HTTP/1.1',
+        'Host: 127.0.0.1',
+        'Upgrade: websocket',
+        'Connection: Upgrade',
+        'Sec-WebSocket-Version: 13',
+        `Sec-WebSocket-Key: ${randomBytes(16).toString('base64')}`,
+        'Origin: http://localhost:3000',
+        '',
+        '',
+      ].join('\r\n'));
+    });
+  });
+}
+
+test('bridge envelope encodes explicit TCP and UDP channels', () => {
+  const tcp = encodeBridgeMessage(CHANNEL_TCP, Buffer.from('tcp'));
+  const udp = encodeBridgeMessage(CHANNEL_UDP, Buffer.from('udp'));
+  assert.deepEqual(decodeBridgeMessage(tcp), { channel: CHANNEL_TCP, payload: Buffer.from('tcp'), legacy: false });
+  assert.deepEqual(decodeBridgeMessage(udp), { channel: CHANNEL_UDP, payload: Buffer.from('udp'), legacy: false });
+  assert.deepEqual(decodeBridgeMessage(Buffer.from('legacy')), { channel: CHANNEL_TCP, payload: Buffer.from('legacy'), legacy: true });
+});
+
+test('gateway exposes health and forwards TCP and UDP traffic only to an allowlisted target', async (t) => {
+  const tcpTarget = createTcpServer((socket) => {
+    socket.on('data', (data) => socket.write(Buffer.concat([Buffer.from('tcp-reply:'), data])));
+  });
+  const tcpPort = await listenTcp(tcpTarget);
+  t.after(() => tcpTarget.close());
+
+  const udpTarget = createSocket('udp4');
+  udpTarget.on('message', (data, remote) => udpTarget.send(Buffer.concat([Buffer.from('udp-reply:'), data]), remote.port, remote.address));
+  const udpPort = await listenUdp(udpTarget);
+  t.after(() => udpTarget.close());
+
+  const gateway = createGateway({
+    host: '127.0.0.1',
+    port: 0,
+    sessionToken: 'test-token',
+    allowedOrigins: ['http://localhost:3000'],
+    servers: [{ id: 'official-test', kind: 'official', host: '127.0.0.1', port: tcpPort, udpPort }],
+    limits: { maxFrameBytes: 1024, maxBufferedBytes: 8192, maxMessagesPerSecond: 20, maxBytesPerSecond: 8192, idleTimeoutMs: 5000 },
+  });
+  const address = await gateway.start();
+  t.after(() => gateway.stop());
+
+  const health = await fetch(`http://127.0.0.1:${address.port}/healthz`).then((response) => response.json());
+  assert.equal(health.status, 'ok');
+  assert.equal(health.allowlistedServers, 1);
+  const home = await fetch(`http://127.0.0.1:${address.port}/`).then((response) => response.text());
+  assert.match(home, /BZFlag Web Gateway/);
+
+  const { connection, response } = await awaitableSocket(address.port);
+  assert.match(response, /^HTTP\/1\.1 101 Switching Protocols/);
+
+  connection.write(maskedWebSocketFrame(encodeBridgeMessage(CHANNEL_TCP, Buffer.from('hello'))));
+  const tcpFrame = await readServerFrame(connection);
+  assert.equal(tcpFrame.opcode, 2);
+  assert.deepEqual(decodeBridgeMessage(tcpFrame.payload).payload, Buffer.from('tcp-reply:hello'));
+
+  connection.write(maskedWebSocketFrame(encodeBridgeMessage(CHANNEL_UDP, Buffer.from('ping'))));
+  const udpFrame = await readServerFrame(connection);
+  assert.equal(udpFrame.opcode, 2);
+  assert.deepEqual(decodeBridgeMessage(udpFrame.payload).payload, Buffer.from('udp-reply:ping'));
+
+  connection.end(maskedWebSocketFrame(Buffer.alloc(0), 8));
+});
+
+test('gateway rejects a WebSocket upgrade with an untrusted Origin', async (t) => {
+  const target = createTcpServer();
+  const targetPort = await listenTcp(target);
+  t.after(() => target.close());
+  const gateway = createGateway({
+    host: '127.0.0.1',
+    port: 0,
+    sessionToken: 'test-token',
+    allowedOrigins: ['http://localhost:3000'],
+    servers: [{ id: 'official-test', host: '127.0.0.1', port: targetPort }],
+  });
+  const address = await gateway.start();
+  t.after(() => gateway.stop());
+  const result = await new Promise((resolve, reject) => {
+    const connection = createConnection({ host: '127.0.0.1', port: address.port });
+    let response = '';
+    connection.on('data', (chunk) => {
+      response += chunk.toString('ascii');
+      if (response.includes('\r\n\r\n')) resolve({ response, connection });
+    });
+    connection.once('error', reject);
+    connection.on('connect', () => connection.write([
+      'GET /bridge?server=official-test&token=test-token HTTP/1.1',
+      'Host: 127.0.0.1',
+      'Upgrade: websocket',
+      'Connection: Upgrade',
+      'Sec-WebSocket-Version: 13',
+      `Sec-WebSocket-Key: ${randomBytes(16).toString('base64')}`,
+      'Origin: https://untrusted.example',
+      '',
+      '',
+    ].join('\r\n')));
+  });
+  assert.match(result.response, /^HTTP\/1\.1 403 Forbidden/);
+  result.connection.destroy();
+});

@@ -1,0 +1,232 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing semver tag to package (for recovery only)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+
+jobs:
+  package:
+    name: Build release packages
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout tagged source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24.x
+          check-latest: true
+
+      - name: Build release directories
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG#v}"
+          rm -rf release
+          mkdir -p "release/bzflag-web-client-${version}" "release/bzflag-web-server-${version}"
+
+          if [[ ! -d client ]]; then
+            echo "client/ is required for a release." >&2
+            exit 1
+          fi
+          if [[ ! -d server ]]; then
+            echo "server/ is required for a release." >&2
+            exit 1
+          fi
+
+          if [[ -f client/package-lock.json ]]; then
+            npm ci --prefix client --ignore-scripts
+          elif [[ -f client/package.json ]]; then
+            npm install --prefix client --ignore-scripts
+          fi
+          npm run build --if-present --prefix client
+
+          if [[ -f server/package-lock.json ]]; then
+            npm ci --prefix server --ignore-scripts
+          elif [[ -f server/package.json ]]; then
+            npm install --prefix server --ignore-scripts
+          fi
+          npm run build --if-present --prefix server
+
+          cp -a client/. "release/bzflag-web-client-${version}/"
+          cp -a server/. "release/bzflag-web-server-${version}/"
+          rm -rf "release/bzflag-web-client-${version}/node_modules" "release/bzflag-web-server-${version}/node_modules"
+
+          for directory in "release/bzflag-web-client-${version}" "release/bzflag-web-server-${version}"; do
+            cp COPYING COPYING.LGPL COPYING.MPL LICENSE-MIT NOTICE AUTHORS "$directory/" 2>/dev/null || true
+          done
+          printf 'BZFlag Web Client release %s\nUpstream reference: %s\n' "$RELEASE_TAG" "$(git rev-parse HEAD)" > release/RELEASE-MANIFEST.txt
+
+          (cd release && zip -qr "bzflag-web-client-${version}.zip" "bzflag-web-client-${version}")
+          (cd release && tar -czf "bzflag-web-server-${version}.tar.gz" "bzflag-web-server-${version}")
+          (cd release && zip -qr "bzflag-web-server-${version}.zip" "bzflag-web-server-${version}")
+
+      - name: Build Docker package
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG#v}"
+          mkdir -p release/docker
+          if [[ ! -f server/Dockerfile ]]; then
+            echo "server/Dockerfile is required for a release." >&2
+            exit 1
+          fi
+          docker build --pull --tag "bzflag-web-server:${version}" --file server/Dockerfile .
+          docker save "bzflag-web-server:${version}" > "release/bzflag-web-server-docker-${version}.tar"
+          gzip -9 -c "release/bzflag-web-server-docker-${version}.tar" > "release/bzflag-web-server-docker-${version}.tar.gz"
+          docker image inspect "bzflag-web-server:${version}" > "release/docker/image-inspect.json"
+          cp server/Dockerfile release/docker/
+
+      - name: Generate checksums, SBOM and provenance manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG#v}"
+          node --input-type=module <<'NODE'
+          import { writeFile } from "node:fs/promises";
+          const manifest = {
+            schema: "https://spdx.dev/schema/2.3",
+            SPDXID: "SPDXRef-DOCUMENT",
+            name: `bzflag-web-${process.env.RELEASE_TAG}`,
+            dataLicense: "CC0-1.0",
+            documentNamespace: `https://github.com/Sythos/BZFlag-Web/releases/${process.env.RELEASE_TAG}`,
+            packages: [{ SPDXID: "SPDXRef-Package-BZFlag-Web", name: "BZFlag Web Client", versionInfo: process.env.RELEASE_TAG, licenseConcluded: "MIT OR LGPL-2.1-only OR MPL-2.0" }],
+          };
+          await writeFile("release/sbom.spdx.json", `${JSON.stringify(manifest, null, 2)}\n`);
+          await writeFile("release/build-provenance.json", `${JSON.stringify({ repository: process.env.GITHUB_REPOSITORY, ref: process.env.RELEASE_TAG, commit: process.env.GITHUB_SHA, workflow: process.env.GITHUB_WORKFLOW, runId: process.env.GITHUB_RUN_ID }, null, 2)}\n`);
+          NODE
+          find release -maxdepth 1 -type f -print0 | sort -z | xargs -0 sha256sum > release/SHA256SUMS.txt
+
+      - name: Upload release bundle for publication
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-${{ env.RELEASE_TAG }}
+          path: release/
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish GitHub release and GHCR image
+    needs: package
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - name: Download release bundle
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-${{ env.RELEASE_TAG }}
+          path: release
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "$RELEASE_TAG" release/bzflag-web-client-*.zip release/bzflag-web-server-*.zip release/bzflag-web-server-*.tar.gz release/bzflag-web-server-docker-*.tar release/bzflag-web-server-docker-*.tar.gz release/SHA256SUMS.txt release/sbom.spdx.json release/build-provenance.json --title "BZFlag Web Client $RELEASE_TAG" --generate-notes
+
+      - name: Attest client package
+        uses: actions/attest-build-provenance@c074443f1aee8d4aeeae555aebba3282517141b2 # v2.2.3
+        with:
+          subject-path: release/bzflag-web-client-*.zip
+
+      - name: Attest server package
+        uses: actions/attest-build-provenance@c074443f1aee8d4aeeae555aebba3282517141b2 # v2.2.3
+        with:
+          subject-path: |
+            release/bzflag-web-server-*.zip
+            release/bzflag-web-server-*.tar.gz
+            release/bzflag-web-server-docker-*.tar
+            release/bzflag-web-server-docker-*.tar.gz
+
+  image:
+    name: Publish gateway image to GHCR
+    needs: package
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    env:
+      IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/bzflag-web-server
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          persist-credentials: false
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract image metadata
+        id: meta
+        uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5.7.0
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}},value=${{ env.RELEASE_TAG }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ env.RELEASE_TAG }}
+            type=raw,value=latest
+
+      - name: Build and publish gateway image
+        id: build
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          file: server/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/amd64,linux/arm64
+          provenance: mode=max
+          sbom: true
+
+      - name: Attest gateway image
+        uses: actions/attest-build-provenance@c074443f1aee8d4aeeae555aebba3282517141b2 # v2.2.3
+        with:
+          subject-name: ${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true

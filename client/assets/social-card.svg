@@ -1,0 +1,43 @@
+<!--
+Copyright (c) 2026 Sythos (https://www.sythos.net)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">BZFlag Web Client</title>
+  <desc id="desc">A local social-card fallback for BZFlag Web Client.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#07111d"/>
+      <stop offset="1" stop-color="#102b3d"/>
+    </linearGradient>
+    <pattern id="grid" width="46" height="46" patternUnits="userSpaceOnUse">
+      <path d="M46 0H0V46" fill="none" stroke="#8eb4c7" stroke-opacity=".10"/>
+    </pattern>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect width="1200" height="630" fill="url(#grid)"/>
+  <path d="m1040 82 130 130-130 130-130-130 130-130Z" fill="#102b3d" stroke="#65e3cf" stroke-opacity=".65" stroke-width="5"/>
+  <path d="m1040 139 73 73-73 73-73-73 73-73Z" fill="#65e3cf"/>
+  <path d="m1040 176 36 36-36 36-36-36 36-36Z" fill="#07111d"/>
+  <text x="92" y="256" fill="#65e3cf" font-family="Inter,Segoe UI,sans-serif" font-size="24" font-weight="700" letter-spacing="5">BROWSER GAME CLIENT</text>
+  <text x="88" y="354" fill="#eef7fb" font-family="Inter,Segoe UI,sans-serif" font-size="66" font-weight="700">BZFlag Web Client</text>
+  <text x="92" y="414" fill="#bfd4de" font-family="Inter,Segoe UI,sans-serif" font-size="26">WebGPU first · WebGL2 fallback · Node.js gateway</text>
+  <text x="92" y="548" fill="#7f9aa8" font-family="IBM Plex Mono,Consolas,monospace" font-size="20">Sythos (https://www.sythos.net)</text>
+</svg>

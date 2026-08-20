@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  javascript:
+    name: Node.js server and client tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24.x
+          check-latest: true
+
+      - name: Install package dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          for directory in server client; do
+            if [[ ! -f "${directory}/package.json" ]]; then
+              echo "${directory}/package.json is not present; skipping dependency install."
+              continue
+            fi
+            if [[ -f "${directory}/package-lock.json" ]]; then
+              npm ci --prefix "${directory}" --ignore-scripts
+            else
+              npm install --prefix "${directory}" --ignore-scripts
+            fi
+          done
+
+      - name: Run server checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -f server/package.json ]]; then
+            npm run lint --if-present --prefix server
+            npm run typecheck --if-present --prefix server
+            npm test --if-present --prefix server
+            npm run build --if-present --prefix server
+          else
+            echo "No server package found; gateway checks will run once server/ is added."
+          fi
+
+      - name: Run client checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -f client/package.json ]]; then
+            npm run lint --if-present --prefix client
+            npm run typecheck --if-present --prefix client
+            npm test --if-present --prefix client
+            npm run build --if-present --prefix client
+            npm run test:e2e --if-present --prefix client
+          else
+            echo "No client package found; browser checks will run once client/ is added."
+          fi
+
+      - name: Validate static HTML entry points
+        run: node .github/scripts/validate-html.mjs
+
+      - name: Check repository whitespace
+        run: git diff --check
+
+  native-source:
+    name: Native source sanity checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Check upstream build metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          for required in COPYING COPYING.LGPL COPYING.MPL; do
+            test -s "$required"
+          done
+          if [[ -f configure.ac ]]; then
+            grep -q "BZFlag" configure.ac
+          else
+            echo "Native upstream build metadata is not part of this web-only checkout; skipping."
+          fi

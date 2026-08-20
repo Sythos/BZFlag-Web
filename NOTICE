@@ -1,0 +1,47 @@
+<!--
+SPDX-License-Identifier: MIT
+Copyright (c) 2026 Sythos (https://www.sythos.net)
+-->
+
+# BZFlag Web Client notices
+
+## Project identity
+
+This repository is an independent browser client and Node.js gateway derived
+from the open-source BZFlag project.  It is maintained by Sythos:
+<https://www.sythos.net>.
+
+The current upstream compatibility baseline is BZFlag/BZFS `2.4.31`, from
+upstream revision
+`59b3ef44fa4538296be8b7f5eeafc2a4e57d0b74` on the upstream `2.4` line:
+<https://github.com/BZFlag-Dev/bzflag/commit/59b3ef44fa4538296be8b7f5eeafc2a4e57d0b74>.
+
+## Licensing boundary
+
+The original BZFlag files that are copied or adapted in this web subset retain
+their upstream headers and licensing terms.  BZFlag is distributed under the
+GNU Lesser General Public License version 2.1 or the Mozilla Public License
+version 2.0, at the applicable option described by the preserved upstream
+`COPYING` files.  The upstream contributor and copyright record remains in
+`AUTHORS`.
+
+New, original web gateway, browser-client, packaging and documentation material
+created for this repository is copyright Sythos and is released under the MIT
+License in `LICENSE-MIT`.  A file's own header, or the license of an included
+third-party asset, takes precedence over this summary.  See `ATTRIBUTION.md`
+for the project-level attribution and provenance rules.
+
+## Asset and translation provenance
+
+The client may package artwork, sounds, fonts, videos and translation data
+from upstream BZFlag or other identified sources.  Each such item must retain
+its own notice and be listed in the relevant provenance manifest before it is
+included in a release.  An upstream or third-party asset is not relicensed as
+MIT merely because it is distributed by this repository.
+
+## No endorsement
+
+The BZFlag Web Client is an independent project.  BZFlag, BZFlag Development
+Team and their contributors are not endorsing this web derivation unless a
+separate written statement says otherwise.
+

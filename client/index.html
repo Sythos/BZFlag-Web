@@ -1,0 +1,206 @@
+<!--
+Copyright (c) 2026 Sythos (https://www.sythos.net)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+-->
+<!doctype html>
+<html lang="en" data-page="connect">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <meta name="theme-color" content="#08111d">
+    <meta name="description" content="Connect to an allowlisted BZFS server from the BZFlag Web Client.">
+    <meta name="author" content="Sythos (https://www.sythos.net)">
+    <meta name="application-name" content="BZFlag Web Client">
+
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="BZFlag Web Client">
+    <meta property="og:description" content="A browser client shell for the BZFlag network, backed by a Node.js gateway.">
+    <meta property="og:url" content="https://www.sythos.net/bzflag-web/">
+    <meta property="og:image" content="https://www.sythos.net/assets/images/og-image.png">
+    <meta property="og:image:alt" content="BZFlag Web Client">
+    <meta property="og:site_name" content="Sythos">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="BZFlag Web Client">
+    <meta name="twitter:description" content="Connect to the BZFlag network from a modern browser.">
+    <meta name="twitter:image" content="https://www.sythos.net/assets/images/og-image.png">
+    <meta name="twitter:image:alt" content="BZFlag Web Client">
+
+    <link rel="canonical" href="https://www.sythos.net/bzflag-web/">
+    <link rel="manifest" href="./manifest.webmanifest">
+    <link rel="icon" href="https://www.sythos.net/favicon.ico" data-brand-source="https://www.sythos.net/favicon.ico">
+    <link rel="icon" type="image/svg+xml" href="./assets/favicon.svg" data-brand-fallback="true">
+    <link rel="apple-touch-icon" sizes="180x180" href="https://www.sythos.net/apple-touch-icon.png" data-brand-source="https://www.sythos.net/apple-touch-icon.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="./assets/branding/apple-touch-icon.svg" data-brand-fallback="true">
+    <link rel="icon" type="image/png" sizes="192x192" href="https://www.sythos.net/android-chrome-192x192.png" data-brand-source="https://www.sythos.net/android-chrome-192x192.png">
+    <link rel="icon" type="image/svg+xml" sizes="192x192" href="./assets/branding/android-chrome-192x192.svg" data-brand-fallback="true">
+    <link rel="icon" type="image/png" sizes="512x512" href="https://www.sythos.net/android-chrome-512x512.png" data-brand-source="https://www.sythos.net/android-chrome-512x512.png">
+    <link rel="icon" type="image/svg+xml" sizes="512x512" href="./assets/branding/android-chrome-512x512.svg" data-brand-fallback="true">
+
+    <title>BZFlag Web Client · Connect</title>
+    <link rel="stylesheet" href="./styles.css">
+    <script defer src="./i18n.js"></script>
+    <script defer src="./app.js"></script>
+  </head>
+  <body class="connect-page">
+    <a class="skip-link" href="#connect-main">Skip to connection form</a>
+    <div class="app-shell">
+      <header class="site-header">
+        <a class="brand" href="./index.html" aria-label="BZFlag Web Client home">
+          <span class="brand-mark" aria-hidden="true">◆</span>
+          <span class="brand-name">BZFlag <strong>Web Client</strong></span>
+        </a>
+        <div class="header-tools">
+          <span class="header-status" aria-label="Client status"><span class="status-dot" aria-hidden="true"></span><span data-i18n="clientReady">Client ready</span></span>
+          <label class="locale-picker">
+            <span class="sr-only" data-i18n="language">Language</span>
+            <select id="locale-select" name="locale" data-locale-select aria-label="Language"></select>
+          </label>
+        </div>
+      </header>
+
+      <main id="connect-main" class="connect-main">
+        <section class="connect-intro" aria-labelledby="connect-title">
+          <p class="section-kicker" data-i18n="connection">Connection</p>
+          <h1 id="connect-title" data-i18n="title">Connect to a BZFS server</h1>
+          <p class="intro-copy" data-i18n="intro">Choose an official endpoint configured by the gateway, then enter your player details. The browser client keeps the game window independent from this setup screen.</p>
+          <div class="intro-details">
+            <div class="detail-row">
+              <span class="detail-icon" aria-hidden="true">◎</span>
+              <span><strong data-i18n="officialOnly">Official network only</strong><small data-i18n="officialOnlyHint">Custom servers stay disabled until an explicit allowlist is added.</small></span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-icon" aria-hidden="true">▣</span>
+              <span><strong data-i18n="rendererReady">Renderer ready</strong><small data-i18n="rendererHint">WebGPU first, with a WebGL2 fallback for modern browsers.</small></span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-icon" aria-hidden="true">⌁</span>
+              <span><strong data-i18n="offlineReady">Installable shell</strong><small data-i18n="offlineHint">The app shell can be cached as a PWA on HTTPS or localhost.</small></span>
+            </div>
+          </div>
+        </section>
+
+        <section class="connection-panel" aria-labelledby="form-title">
+          <div class="panel-heading">
+            <div>
+              <p class="panel-eyebrow" data-i18n="playerSession">Player session</p>
+              <h2 id="form-title" data-i18n="playerDetails">Player details</h2>
+            </div>
+            <span class="panel-version" title="Upstream reference 59b3ef44fa4538296be8b7f5eeafc2a4e57d0b74">BZFS 2.4.31</span>
+          </div>
+
+          <form id="connect-form" class="connection-form" novalidate>
+            <div class="form-grid">
+              <div class="field field-wide">
+                <label for="nickname" data-i18n="nickname">Nickname</label>
+                <input id="nickname" name="nickname" type="text" maxlength="32" autocomplete="nickname" required data-i18n-placeholder="nicknamePlaceholder" placeholder="How should other players see you?">
+                <small class="field-help" data-i18n="nicknameHelp">Use 1–32 characters.</small>
+              </div>
+
+              <div class="field field-wide">
+                <label for="server-host" data-i18n="server">Server</label>
+                <div class="compound-input">
+                  <input id="server-host" name="serverHost" type="text" value="bzflag.org" maxlength="253" autocomplete="url" spellcheck="false" readonly aria-readonly="true" data-i18n-placeholder="serverPlaceholder" placeholder="Official server hostname">
+                  <input id="server-id" name="serverId" type="hidden" value="official-main">
+                  <select id="server-preset" name="serverPreset" aria-label="Official server preset">
+                    <option value="official-main" data-host="bzflag.org" data-port="5154">BZFlag official network</option>
+                    <option value="official-community" data-host="my.bzflag.org" data-port="5154">Official community index</option>
+                    <option value="custom-future" data-host="" data-port="5154" disabled>Custom server (future allowlist)</option>
+                  </select>
+                </div>
+                <small class="field-help" data-i18n="serverHelp">The selected server ID maps to a host and port in the gateway allowlist.</small>
+              </div>
+
+              <div class="field">
+                <label for="server-port" data-i18n="port">Port</label>
+                <input id="server-port" name="port" type="number" min="1" max="65535" value="5154" inputmode="numeric" readonly aria-readonly="true" required>
+              </div>
+
+              <div class="field">
+                <label for="gateway-endpoint" data-i18n="gateway">Gateway endpoint</label>
+                <input id="gateway-endpoint" name="gateway" type="url" value="/bridge" autocomplete="url" spellcheck="false" data-i18n-placeholder="gatewayPlaceholder" placeholder="/bridge">
+              </div>
+
+              <div class="field">
+                <label for="session-token" data-i18n="sessionToken">Gateway session token</label>
+                <input id="session-token" name="sessionToken" type="password" maxlength="512" autocomplete="off" spellcheck="false" data-i18n-placeholder="sessionTokenPlaceholder" placeholder="Provided by the gateway operator">
+                <small class="field-help warning-help" data-i18n="sessionTokenHelp">Used only for this tab. It is never written to localStorage.</small>
+              </div>
+
+              <div class="field field-wide">
+                <label for="password" data-i18n="password">Password</label>
+                <input id="password" name="password" type="password" maxlength="128" autocomplete="current-password" data-i18n-placeholder="passwordPlaceholder" placeholder="Optional server password">
+                <label class="check-row" for="remember-password">
+                  <input id="remember-password" name="rememberPassword" type="checkbox">
+                  <span data-i18n="rememberPassword">Save password on this device</span>
+                </label>
+                <small class="field-help warning-help" data-i18n="passwordHelp">Only save it if this is a trusted device. It is never sent to analytics.</small>
+              </div>
+
+              <div class="field">
+                <label for="team" data-i18n="team">Team</label>
+                <select id="team" name="team">
+                  <option value="automatic" data-i18n="teamAutomatic">Automatic</option>
+                  <option value="rogue" data-i18n="teamRogue">Rogue</option>
+                  <option value="red" data-i18n="teamRed">Red</option>
+                  <option value="green" data-i18n="teamGreen">Green</option>
+                  <option value="blue" data-i18n="teamBlue">Blue</option>
+                  <option value="purple" data-i18n="teamPurple">Purple</option>
+                  <option value="observer" data-i18n="teamObserver">Observer</option>
+                </select>
+              </div>
+
+              <div class="field">
+                <label for="motto" data-i18n="motto">Motto</label>
+                <input id="motto" name="motto" type="text" maxlength="80" autocomplete="off" data-i18n-placeholder="mottoPlaceholder" placeholder="Optional player motto">
+              </div>
+            </div>
+
+            <fieldset class="preferences-fieldset">
+              <legend data-i18n="clientOptions">Client options</legend>
+              <label class="check-row" for="audio-enabled">
+                <input id="audio-enabled" name="audioEnabled" type="checkbox" checked>
+                <span data-i18n="enableAudio">Enable audio</span>
+              </label>
+              <label class="check-row" for="prefer-webgpu">
+                <input id="prefer-webgpu" name="preferWebGPU" type="checkbox" checked>
+                <span data-i18n="preferWebGPU">Prefer WebGPU when available</span>
+              </label>
+            </fieldset>
+
+            <div class="form-actions">
+              <p class="fullscreen-note"><span class="keycap">F11</span> <span data-i18n="fullscreenHint">Use F11 for browser fullscreen.</span></p>
+              <button class="primary-button" type="submit">
+                <span data-i18n="connect">Connect</span>
+                <span class="button-arrow" aria-hidden="true">→</span>
+              </button>
+            </div>
+            <p id="connect-status" class="form-status" role="status" aria-live="polite"></p>
+          </form>
+        </section>
+      </main>
+
+      <footer class="site-footer">
+        <p class="footer-note"><span data-i18n="footerNote">A browser client shell for the BZFlag network. The gateway remains responsible for server access.</span></p>
+        <p id="client-credit" class="client-credit" data-build-date="2026-08-20" data-web-version="0.1.0" data-bzfs-version="2.4.31" data-upstream-ref="59b3ef44fa4538296be8b7f5eeafc2a4e57d0b74">[2026-08-20 · web 0.1.0 · BZFS 2.4.31 / 59b3ef44…] Sythos (<a href="https://www.sythos.net" rel="noopener noreferrer">https://www.sythos.net</a>)</p>
+      </footer>
+    </div>
+  </body>
+</html>

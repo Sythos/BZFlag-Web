@@ -1,0 +1,25 @@
+{
+  "name": "bzflag-web-client",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Browser BZFlag client and Node.js gateway for official BZFS servers.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "license": "SEE LICENSE IN LICENSE-MIT",
+  "author": "Sythos (https://www.sythos.net)",
+  "x-license-header": "SPDX-License-Identifier: MIT; Copyright (c) 2026 Sythos (https://www.sythos.net)",
+  "x-upstream": {
+    "project": "BZFlag",
+    "version": "2.4.31",
+    "ref": "59b3ef44fa4538296be8b7f5eeafc2a4e57d0b74",
+    "branch": "2.4",
+    "repository": "https://github.com/BZFlag-Dev/bzflag"
+  },
+  "x-licensing": {
+    "new-original-files": "MIT",
+    "derived-upstream-files": "LGPL-2.1-only OR MPL-2.0",
+    "notice": "See NOTICE, ATTRIBUTION.md, COPYING, COPYING.LGPL, COPYING.MPL and LICENSE-MIT."
+  }
+}

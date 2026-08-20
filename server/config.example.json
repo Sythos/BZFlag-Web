@@ -1,0 +1,38 @@
+{
+  "_license": "MIT - Copyright (c) 2026 Sythos (https://www.sythos.net). See LICENSE-MIT.",
+  "host": "127.0.0.1",
+  "port": 8080,
+  "bridgePath": "/bridge",
+  "healthPath": "/healthz",
+  "sessionToken": "replace-with-a-long-random-token",
+  "allowedOrigins": [
+    "http://localhost",
+    "http://127.0.0.1"
+  ],
+  "allowCustomServers": false,
+  "protocolVersion": "0221",
+  "bzflagVersion": "2.4.31",
+  "servers": [
+    {
+      "id": "official-main",
+      "label": "Official BZFlag server",
+      "kind": "official",
+      "host": "replace-with-an-approved-official-host",
+      "port": 5154,
+      "udpPort": 5154,
+      "protocolVersion": "0221",
+      "bzflagVersion": "2.4.31",
+      "enabled": true
+    }
+  ],
+  "limits": {
+    "maxFrameBytes": 1048576,
+    "maxBufferedBytes": 4194304,
+    "maxMessagesPerSecond": 120,
+    "maxBytesPerSecond": 8388608,
+    "maxSessions": 128,
+    "maxSessionsPerIp": 4,
+    "idleTimeoutMs": 900000
+  },
+  "trustProxy": false
+}

@@ -1,0 +1,81 @@
+name: Compliance
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: compliance-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  project-policy:
+    name: Licenses, headers and project documentation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check licenses, attribution and headers
+        run: node .github/scripts/check-compliance.mjs
+
+      - name: Check workflow references are immutable
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -RInE '^[[:space:]]*uses:.*@(main|master|v[0-9]+|v[0-9]+\.[0-9]+\.[0-9]+)[[:space:]]*(#|$)' .github/workflows; then
+            echo "Mutable GitHub Action references are not allowed; use a full commit SHA." >&2
+            exit 1
+          fi
+
+      - name: Check for accidental credentials in releaseable paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          if find server client -type f \( -name '*.env' -o -name '*.key' -o -name '*.pem' -o -name '*credentials*' \) -print -quit 2>/dev/null | grep -q .; then
+            echo "Credential-like files found below server/ or client/." >&2
+            exit 1
+          fi
+
+  dependency-policy:
+    name: Node dependency policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24.x
+          check-latest: true
+
+      - name: Audit production dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          for directory in server client; do
+            if [[ ! -f "${directory}/package.json" ]]; then
+              continue
+            fi
+            if [[ -f "${directory}/package-lock.json" ]]; then
+              npm ci --prefix "${directory}" --ignore-scripts
+            else
+              npm install --prefix "${directory}" --ignore-scripts
+            fi
+            npm audit --prefix "${directory}" --omit=dev --audit-level=high
+            npm pack --prefix "${directory}" --dry-run
+          done

@@ -1,0 +1,95 @@
+<!--
+  Copyright (c) 2026 Sythos (https://www.sythos.net)
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in all
+  copies or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+  SOFTWARE.
+-->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Installation and configuration instructions for the BZFlag Web Node.js gateway.">
+  <title>BZFlag Web Gateway | Installation</title>
+  <style>
+    :root { color-scheme: light dark; font-family: system-ui, sans-serif; line-height: 1.55; }
+    body { margin: 0; background: #f4f6f8; color: #18212a; }
+    main { max-width: 900px; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
+    article { background: white; border: 1px solid #d9e0e7; border-radius: 14px; padding: 2rem; box-shadow: 0 8px 30px rgb(16 35 52 / 8%); }
+    h1, h2 { line-height: 1.2; }
+    h1 { margin-top: 0; }
+    code, pre { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+    pre { overflow-x: auto; padding: 1rem; background: #17212b; color: #eaf2f8; border-radius: 9px; }
+    code { background: #edf1f4; padding: .1rem .3rem; border-radius: 4px; }
+    pre code { background: transparent; padding: 0; }
+    .notice { border-left: 4px solid #2d75b9; padding: .75rem 1rem; background: #edf6ff; }
+    footer { margin-top: 2rem; color: #536474; font-size: .9rem; text-align: right; }
+    @media (prefers-color-scheme: dark) {
+      body { background: #0f151a; color: #e8eef2; }
+      article { background: #182129; border-color: #32424f; }
+      code { background: #2a3741; }
+      .notice { background: #172e40; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <article>
+      <h1>BZFlag Web Gateway</h1>
+      <p>This small Node.js service translates a browser WebSocket connection into TCP and UDP connections to an allowlisted BZFlag server. It does not expose arbitrary host or port access and it does not run a BZFlag game server.</p>
+
+      <div class="notice"><strong>Security first:</strong> keep the gateway bound to a private interface while configuring it. Use HTTPS/WSS behind a reverse proxy for public deployments, keep a long random session token, and list only servers that you explicitly trust.</div>
+
+      <h2>Requirements</h2>
+      <ul>
+        <li>Node.js 22 or a newer supported stable release.</li>
+        <li>Network access from this host to the selected official BZFlag server.</li>
+        <li>A browser client served from an origin listed in <code>allowedOrigins</code>.</li>
+      </ul>
+
+      <h2>Install and configure</h2>
+      <pre><code>cd server
+cp config.example.json config.json
+node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
+# Put the generated value in config.json as sessionToken.
+# Replace the example official host with an approved BZFlag server.
+npm start</code></pre>
+      <p>On Windows PowerShell, use <code>Copy-Item config.example.json config.json</code> instead of <code>cp</code>. The gateway prints its listening address and token source at startup. A token generated automatically is intended for local development; set <code>BZFLAG_WEB_SESSION_TOKEN</code> in production.</p>
+
+      <h2>Check the service</h2>
+      <pre><code>curl http://127.0.0.1:8080/healthz</code></pre>
+      <p>The WebSocket endpoint is <code>/bridge?server=official-main&amp;token=YOUR_TOKEN</code>. The browser client should use <code>ws://</code> for local HTTP development and <code>wss://</code> when its page is served over HTTPS.</p>
+
+      <h2>Docker</h2>
+      <pre><code>docker build -t sythos/bzflag-web-gateway:local .
+docker run --rm --name bzflag-web-gateway \
+  -p 8080:8080 \
+  -v "$PWD/config.json:/app/config.json:ro" \
+  sythos/bzflag-web-gateway:local</code></pre>
+      <p>Keep <code>config.json</code> outside the image so the token and allowlist are not baked into a public layer. The image contains only the gateway, not <code>bzfs</code>.</p>
+
+      <h2>Reverse proxy</h2>
+      <p>Terminate TLS at Apache or Nginx and forward WebSocket upgrades to the gateway. Add the public page origin exactly (including scheme and port) to <code>allowedOrigins</code>. Do not enable <code>trustProxy</code> unless every proxy in front of this service is controlled by you.</p>
+
+      <h2>Future custom-server support</h2>
+      <p>Configuration entries already have a <code>kind</code> field and can carry per-server protocol metadata. Entries marked <code>custom</code> remain blocked while <code>allowCustomServers</code> is false. This default prevents a public gateway from becoming a general-purpose TCP/UDP proxy.</p>
+    </article>
+    <footer>Sythos (<a href="https://www.sythos.net">www.sythos.net</a>) [BZFlag 2.4.31 / BZFS protocol 0221]</footer>
+  </main>
+</body>
+</html>

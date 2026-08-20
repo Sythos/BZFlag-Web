@@ -1,0 +1,145 @@
+<!--
+Copyright (c) 2026 Sythos (https://www.sythos.net)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+-->
+<!doctype html>
+<html lang="en" data-page="game">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <meta name="theme-color" content="#08111d">
+    <meta name="description" content="BZFlag Web Client game window.">
+    <meta name="author" content="Sythos (https://www.sythos.net)">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="BZFlag Web Client · Game">
+    <meta property="og:description" content="The independent BZFlag Web Client game window.">
+    <meta property="og:image" content="https://www.sythos.net/assets/images/og-image.png">
+    <meta property="og:image:alt" content="BZFlag Web Client game window">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:image" content="https://www.sythos.net/assets/images/og-image.png">
+    <link rel="manifest" href="./manifest.webmanifest">
+    <link rel="icon" href="https://www.sythos.net/favicon.ico" data-brand-source="https://www.sythos.net/favicon.ico">
+    <link rel="icon" type="image/svg+xml" href="./assets/favicon.svg" data-brand-fallback="true">
+    <link rel="apple-touch-icon" sizes="180x180" href="https://www.sythos.net/apple-touch-icon.png" data-brand-source="https://www.sythos.net/apple-touch-icon.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="./assets/branding/apple-touch-icon.svg" data-brand-fallback="true">
+    <link rel="icon" type="image/png" sizes="192x192" href="https://www.sythos.net/android-chrome-192x192.png" data-brand-source="https://www.sythos.net/android-chrome-192x192.png">
+    <link rel="icon" type="image/svg+xml" sizes="192x192" href="./assets/branding/android-chrome-192x192.svg" data-brand-fallback="true">
+    <link rel="icon" type="image/png" sizes="512x512" href="https://www.sythos.net/android-chrome-512x512.png" data-brand-source="https://www.sythos.net/android-chrome-512x512.png">
+    <link rel="icon" type="image/svg+xml" sizes="512x512" href="./assets/branding/android-chrome-512x512.svg" data-brand-fallback="true">
+    <title>BZFlag Web Client · Game</title>
+    <link rel="stylesheet" href="./styles.css">
+    <script defer src="./i18n.js"></script>
+    <script defer src="./renderer.js"></script>
+    <script defer src="./protocol.js"></script>
+    <script defer src="./game.js"></script>
+  </head>
+  <body class="game-page">
+    <a class="skip-link" href="#game-main">Skip to game window</a>
+    <div class="game-shell">
+      <header class="game-header">
+        <a class="brand" href="./index.html" aria-label="Back to BZFlag Web Client connection screen">
+          <span class="brand-mark" aria-hidden="true">◆</span>
+          <span class="brand-name">BZFlag <strong>Web Client</strong></span>
+        </a>
+        <div class="game-session" aria-live="polite">
+          <span class="session-player" id="session-player">Player</span>
+          <span class="session-separator" aria-hidden="true">·</span>
+          <span id="session-server">Gateway session</span>
+        </div>
+        <div class="game-actions">
+          <span class="renderer-badge" id="renderer-badge" data-mode="pending"><span class="status-dot" aria-hidden="true"></span><span id="renderer-label">Detecting renderer</span></span>
+          <button class="icon-button" id="audio-toggle" type="button" aria-pressed="true" title="Toggle audio"><span aria-hidden="true">♫</span><span class="sr-only" data-i18n="toggleAudio">Toggle audio</span></button>
+          <button class="icon-button" id="fullscreen-button" type="button" title="Enter fullscreen"><span aria-hidden="true">⛶</span><span class="sr-only" data-i18n="fullscreen">Fullscreen</span></button>
+          <button class="secondary-button compact-button" id="disconnect-button" type="button" data-i18n="disconnect">Disconnect</button>
+        </div>
+      </header>
+
+      <main id="game-main" class="game-main">
+        <section class="game-stage" aria-label="BZFlag Web Client game viewport">
+          <div class="canvas-wrap">
+            <canvas id="game-canvas" width="1280" height="720" aria-label="BZFlag game rendering surface"></canvas>
+            <div class="canvas-overlay overlay-top-left">
+              <span class="overlay-label">BZFLAG WEB</span>
+              <span id="connection-status" class="connection-status"><span class="status-dot" aria-hidden="true"></span><span data-i18n="connecting">Waiting for gateway</span></span>
+            </div>
+            <div class="canvas-overlay overlay-top-right">
+              <span class="hud-label" data-i18n="score">Score</span>
+              <strong id="score-value">0</strong>
+              <span class="hud-divider" aria-hidden="true">/</span>
+              <span class="hud-label" data-i18n="kills">Kills</span>
+              <strong id="kills-value">0</strong>
+            </div>
+            <div class="canvas-overlay overlay-bottom-left" id="event-feed" role="log" aria-live="polite">
+              <p data-i18n="previewNotice">Renderer preview active. Server protocol messages will appear here.</p>
+            </div>
+            <div class="canvas-overlay overlay-bottom-right">
+              <span class="hud-label" data-i18n="health">Health</span>
+              <span class="health-bar" aria-label="Health 100 percent"><span id="health-value"></span></span>
+            </div>
+          </div>
+          <div class="game-toolbar" aria-label="Game controls">
+            <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> <span data-i18n="move">move</span></span>
+            <span><kbd>Space</kbd> <span data-i18n="fire">fire</span></span>
+            <span><kbd>F</kbd> <span data-i18n="dropFlag">drop flag</span></span>
+            <span><kbd>Tab</kbd> <span data-i18n="scoreboard">scoreboard</span></span>
+            <span class="toolbar-spacer"></span>
+            <span class="toolbar-hint"><span class="keycap">F11</span> <span data-i18n="fullscreenHint">fullscreen</span></span>
+          </div>
+        </section>
+
+        <aside class="game-sidebar" aria-label="Game session details">
+          <section class="sidebar-section">
+            <p class="panel-eyebrow" data-i18n="session">Session</p>
+            <h1 id="sidebar-title">BZFlag Web Client</h1>
+            <dl class="session-details">
+              <div><dt data-i18n="player">Player</dt><dd id="sidebar-player">—</dd></div>
+              <div><dt data-i18n="server">Server</dt><dd id="sidebar-server">—</dd></div>
+              <div><dt data-i18n="team">Team</dt><dd id="sidebar-team">—</dd></div>
+              <div><dt data-i18n="gateway">Gateway</dt><dd id="sidebar-gateway">—</dd></div>
+            </dl>
+          </section>
+
+          <section class="sidebar-section renderer-panel">
+            <p class="panel-eyebrow" data-i18n="rendering">Rendering</p>
+            <div class="renderer-choice active" id="renderer-choice-primary"><span class="choice-icon" aria-hidden="true">▣</span><span><strong data-i18n="webgpu">WebGPU</strong><small data-i18n="webgpuPrimary">Primary renderer</small></span><span class="choice-state" id="webgpu-state">…</span></div>
+            <div class="renderer-choice" id="renderer-choice-fallback"><span class="choice-icon" aria-hidden="true">◇</span><span><strong data-i18n="webgl2">WebGL2</strong><small data-i18n="webglFallback">Fallback renderer</small></span><span class="choice-state" id="webgl-state">…</span></div>
+          </section>
+
+          <section class="sidebar-section sidebar-note">
+            <p class="panel-eyebrow" data-i18n="gatewayNoteTitle">Gateway boundary</p>
+            <p data-i18n="gatewayNote">The browser never opens a raw BZFS socket. The Node.js bridge validates the allowlist and carries the session over WebSocket/WSS.</p>
+          </section>
+
+          <section class="sidebar-section audio-panel">
+            <div class="audio-heading"><span class="panel-eyebrow" data-i18n="audio">Audio</span><span id="audio-state" class="audio-state" data-i18n="audioOn">On</span></div>
+            <label for="volume" data-i18n="volume">Volume</label>
+            <input id="volume" type="range" min="0" max="1" step="0.05" value="0.7">
+          </section>
+        </aside>
+      </main>
+
+      <footer class="site-footer game-footer">
+        <p class="footer-note"><span data-i18n="disclaimer">Unofficial browser client shell. BZFlag and BZFS remain projects of their respective maintainers.</span></p>
+        <p id="client-credit" class="client-credit" data-build-date="2026-08-20" data-web-version="0.1.0" data-bzfs-version="2.4.31" data-upstream-ref="59b3ef44fa4538296be8b7f5eeafc2a4e57d0b74">[2026-08-20 · web 0.1.0 · BZFS 2.4.31 / 59b3ef44…] Sythos (<a href="https://www.sythos.net" rel="noopener noreferrer">https://www.sythos.net</a>)</p>
+      </footer>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,37 @@
+{
+  "name": "BZFlag Web Client",
+  "short_name": "BZFlag Web",
+  "description": "A browser client shell for the BZFlag network.",
+  "lang": "en",
+  "dir": "ltr",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#07111d",
+  "theme_color": "#08111d",
+  "icons": [
+    {
+      "src": "./assets/branding/android-chrome-192x192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./assets/branding/android-chrome-512x512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./assets/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "author": "Sythos (https://www.sythos.net)",
+  "license": "MIT",
+  "x-brand-source": "https://www.sythos.net",
+  "x-upstream-reference": "BZFlag 2.4.31 / 59b3ef44fa4538296be8b7f5eeafc2a4e57d0b74"
+}

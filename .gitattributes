@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Sythos (https://www.sythos.net)
+
+* text=auto eol=lf
+
+# Binary client assets must not be normalized by Git.
+*.7z binary
+*.bin binary
+*.gif binary
+*.ico binary
+*.jpeg binary
+*.jpg binary
+*.mp3 binary
+*.ogg binary
+*.png binary
+*.webm binary
+*.wav binary
+*.wasm binary
+*.woff binary
+*.woff2 binary
+
+# Generated release material is not source code.
+*.map linguist-generated=true
+coverage/ linguist-generated=true
+reports/ linguist-generated=true
+
