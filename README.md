@@ -115,9 +115,10 @@ custom-server policy without weakening the secure default.
 
 ## Client: rendering, input and media
 
-The client is plain HTML5 with JavaScript/TypeScript and may use WebAssembly
-for isolated, performance-sensitive routines when that is measurably useful.
-It does not require a native browser plug-in.
+The client is plain HTML5 with TypeScript as its source of truth and compiled
+JavaScript in the static package. WebAssembly may be used for isolated,
+performance-sensitive routines when that is measurably useful. It does not
+require a native browser plug-in.
 
 WebGPU is the preferred path.  It gives the eventual renderer explicit modern
 GPU buffers, bind groups, pipelines and command encoders, which is a good fit
