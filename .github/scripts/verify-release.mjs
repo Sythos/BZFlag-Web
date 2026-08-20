@@ -356,9 +356,17 @@ try {
 
 const serviceWorker = await readText("client/service-worker.ts");
 const serviceWorkerBase = resolve(repositoryRoot, "client");
-for (const match of serviceWorker.matchAll(/["']([^"']+)["']/g)) {
-  if (match[1] === "./") continue;
-  await resolveLocalReference(serviceWorkerBase, match[1], "client/service-worker.ts");
+// Validate only the declarative cache list. Scanning every string literal in
+// the TypeScript source would mistake implementation details such as regular
+// expressions, error messages, and path separators for asset references.
+const staticAssetsMatch = serviceWorker.match(/const STATIC_ASSETS = \[(?<assets>[\s\S]*?)\] as const;/);
+  if (!staticAssetsMatch?.groups?.assets) {
+  failures.push("client/service-worker.ts: STATIC_ASSETS declaration is missing");
+} else {
+  for (const match of staticAssetsMatch.groups.assets.matchAll(/["']([^"']+)["']/g)) {
+    if (match[1] === "./") continue;
+    await resolveLocalReference(serviceWorkerBase, match[1], "client/service-worker.ts");
+  }
 }
 
 if (failures.length > 0) {
