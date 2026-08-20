@@ -987,6 +987,7 @@ class GatewaySession {
   private readonly clientIp: string;
   private tcp: Socket | null;
   private udp: DatagramSocket | null;
+  private targetEndpoint: ResolvedTargetAddress | null;
   private connecting: boolean;
   private udpReady: boolean;
   private targetHandshakeVerified: boolean;
@@ -1006,6 +1007,7 @@ class GatewaySession {
     this.clientIp = clientIp;
     this.tcp = null;
     this.udp = null;
+    this.targetEndpoint = null;
     this.connecting = true;
     this.udpReady = false;
     this.targetHandshakeVerified = false;
@@ -1032,19 +1034,22 @@ class GatewaySession {
 
   async #connect(): Promise<void> {
     try {
+      // The deadline covers DNS resolution, TCP establishment, and the
+      // complete BZFS identity greeting. It is cleared only after validation.
+      this.targetHandshakeTimer = setTimeout(() => {
+        this.#fail('Target did not complete the BZFS handshake before the deadline', 1003);
+      }, this.gateway.config.limits.targetHandshakeTimeoutMs);
       // Resolve once and connect to the selected literal address. Passing the
       // literal to both transports pins the DNS answer for this session and
       // avoids a second lookup that could be changed by DNS rebinding.
       const endpoint = await resolveTargetAddress(this.target.host, this.gateway.config.allowPrivateAddresses);
       if (this.closed) return;
+      this.targetEndpoint = endpoint;
       this.tcp = createConnection({ host: endpoint.address, port: this.target.port, family: endpoint.family });
       this.tcp.setNoDelay(true);
       this.tcp.setTimeout(this.gateway.config.limits.idleTimeoutMs, () => this.close('TCP idle timeout'));
       this.tcp.on('connect', () => {
         this.lastActivity = Date.now();
-        this.targetHandshakeTimer = setTimeout(() => {
-          this.#fail('Target did not complete the BZFS handshake', 1003);
-        }, this.gateway.config.limits.targetHandshakeTimeoutMs);
         this.tcp?.write(BZFLAG_CONNECT_HEADER);
       });
       this.tcp.on('data', (data: Buffer) => this.#handleTargetTcpData(data));
@@ -1053,17 +1058,22 @@ class GatewaySession {
         if (!this.closed) this.close('TCP connection closed');
       });
 
-      this.udp = createSocket(endpoint.family === 6 ? 'udp6' : 'udp4');
-      this.udp.on('message', (data: Buffer, _remote: RemoteInfo) => this.#sendTargetData(CHANNEL_UDP, data));
-      this.udp.on('error', (error: NodeJS.ErrnoException) => this.#fail(`UDP connection error: ${error.code || 'error'}`));
-      this.udp.connect(this.target.udpPort, endpoint.address, () => {
-        this.lastActivity = Date.now();
-        this.udpReady = true;
-        this.#maybeReady();
-      });
     } catch (error: any) {
       this.#fail(`Target connection setup failed: ${error.code || 'error'}`);
     }
+  }
+
+  #openUdpAfterHandshake(): void {
+    if (this.closed || !this.targetHandshakeVerified || this.udp || !this.targetEndpoint) return;
+    const endpoint = this.targetEndpoint;
+    this.udp = createSocket(endpoint.family === 6 ? 'udp6' : 'udp4');
+    this.udp.on('message', (data: Buffer, _remote: RemoteInfo) => this.#sendTargetData(CHANNEL_UDP, data));
+    this.udp.on('error', (error: NodeJS.ErrnoException) => this.#fail(`UDP connection error: ${error.code || 'error'}`));
+    this.udp.connect(this.target.udpPort, endpoint.address, () => {
+      this.lastActivity = Date.now();
+      this.udpReady = true;
+      this.#maybeReady();
+    });
   }
 
   #handleTargetTcpData(data: Buffer): void {
@@ -1100,6 +1110,9 @@ class GatewaySession {
       clearTimeout(this.targetHandshakeTimer);
       this.targetHandshakeTimer = null;
     }
+    // Do not create or connect an outbound UDP socket until the same target
+    // has proved its BZFS identity over TCP.
+    this.#openUdpAfterHandshake();
     // Forward only the validated BZFS greeting and any bytes coalesced after it.
     this.#sendTargetData(CHANNEL_TCP, greeting);
     if (data.length > 0) this.#sendTargetData(CHANNEL_TCP, data);
