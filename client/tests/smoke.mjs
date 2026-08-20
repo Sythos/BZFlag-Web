@@ -97,5 +97,8 @@ for (const marker of ["game-canvas", "protocol.js", "WebGPU", "WebGL2", "Sythos"
 if (manifest.license !== "MIT" || manifest.scope !== "./") {
   throw new Error("manifest.webmanifest has an unexpected license or scope");
 }
+if (!index.includes('id="gateway-endpoint"') || !index.includes('id="gateway-endpoint" name="gateway" type="text"')) {
+  throw new Error("gateway endpoint must accept relative bridge paths");
+}
 
 console.log(`Client smoke checks passed (${requiredFiles.length} required files).`);
