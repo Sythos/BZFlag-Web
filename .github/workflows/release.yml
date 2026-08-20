@@ -179,7 +179,11 @@ jobs:
           export PLAYWRIGHT_BROWSERS_PATH="$e2e_root/browsers"
           node --version
           npx --prefix "$e2e_root" playwright --version
-          npx --prefix "$e2e_root" playwright install --dry-run --with-deps --only-shell chromium
+          dry_run_status=0
+          npx --prefix "$e2e_root" playwright install --dry-run --with-deps --only-shell chromium || dry_run_status=$?
+          if (( dry_run_status > 1 )); then
+            exit "$dry_run_status"
+          fi
           timeout 12m npx --prefix "$e2e_root" playwright install --with-deps --only-shell chromium
 
       - name: Run real browser Connect-to-game E2E
