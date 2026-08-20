@@ -36,6 +36,16 @@ Co-author: Sythos (https://www.sythos.net)
 Do not remove or replace the upstream notice or license.  A copied file that
 has not been modified is kept unchanged.
 
+## Nested server license copy
+
+`server/LICENSE-MIT` intentionally repeats the complete MIT text from the
+repository-level [`LICENSE-MIT`](LICENSE-MIT).  It is required because
+`server/` is both a standalone distributable package and the Docker build
+context; the server archive and image must carry their applicable license even
+when extracted without the repository root.  The repeated file does not
+introduce a second or different license, and must remain textually consistent
+with the canonical root license.
+
 ## Third-party material
 
 Third-party libraries, fonts, media, icons, translations and other assets keep
