@@ -359,8 +359,13 @@ const serviceWorkerBase = resolve(repositoryRoot, "client");
 // Validate only the declarative cache list. Scanning every string literal in
 // the TypeScript source would mistake implementation details such as regular
 // expressions, error messages, and path separators for asset references.
-const staticAssetsMatch = serviceWorker.match(/const STATIC_ASSETS = \[(?<assets>[\s\S]*?)\] as const;/);
-  if (!staticAssetsMatch?.groups?.assets) {
+const manifestReference = serviceWorker.match(/const ASSET_MANIFEST\s*=\s*["']([^"']+)["']/)?.[1];
+if (!manifestReference) {
+  failures.push("client/service-worker.ts: ASSET_MANIFEST declaration is missing");
+} else {
+  await resolveLocalReference(serviceWorkerBase, manifestReference, "client/service-worker.ts ASSET_MANIFEST");
+}
+const staticAssetsMatch = serviceWorker.match(/const STATIC_ASSETS = \[(?<assets>[\s\S]*?)\] as const;/);\nif (!staticAssetsMatch?.groups?.assets) {
   failures.push("client/service-worker.ts: STATIC_ASSETS declaration is missing");
 } else {
   for (const match of staticAssetsMatch.groups.assets.matchAll(/["']([^"']+)["']/g)) {

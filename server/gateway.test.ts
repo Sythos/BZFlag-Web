@@ -55,7 +55,9 @@ interface UpgradeResult {
 interface UpgradeOptions {
   serverId?: string;
   token?: string;
+  subprotocolToken?: string;
   subprotocol?: boolean;
+  queryToken?: boolean;
 }
 
 function listenTcp(server: TcpServer): Promise<number> {
@@ -152,9 +154,11 @@ function waitForSocketClose(socket: Socket, timeoutMs = 2000): Promise<void> {
 function awaitableSocket(port: number, options: UpgradeOptions = {}): Promise<UpgradeResult> {
   const serverId = options.serverId || 'official-test';
   const token = options.token || 'test-token';
-  const queryToken = options.subprotocol ? '' : `&token=${encodeURIComponent(token)}`;
+  const subprotocolToken = options.subprotocolToken || token;
+  const includeQueryToken = options.queryToken ?? !options.subprotocol;
+  const queryToken = includeQueryToken ? `&token=${encodeURIComponent(token)}` : '';
   const subprotocol = options.subprotocol
-    ? ['Sec-WebSocket-Protocol: bzflag-web-v1, bzflag-token.' + Buffer.from(token, 'utf8').toString('base64url')]
+    ? ['Sec-WebSocket-Protocol: bzflag-web-v1, bzflag-token.' + Buffer.from(subprotocolToken, 'utf8').toString('base64url')]
     : [];
   return new Promise<UpgradeResult>((resolve, reject) => {
     const connection = createConnection({ host: '127.0.0.1', port });
@@ -265,6 +269,32 @@ test('gateway authenticates bearer tokens through the WebSocket subprotocol and 
   const legacy = await awaitableSocket(address.port);
   assert.match(legacy.response, /^HTTP\/1\.1 403 Forbidden/);
   legacy.connection.destroy();
+});
+
+test('gateway never falls back to a query token when a token subprotocol is present but invalid', async (t: TestContext) => {
+  const target = createTcpServer();
+  const targetPort = await listenTcp(target);
+  t.after(() => target.close());
+  const gateway = createGateway({
+    host: '127.0.0.1',
+    port: 0,
+    sessionToken: 'test-token',
+    allowLegacyQueryToken: true,
+    allowPrivateAddresses: true,
+    allowedOrigins: ['http://localhost:3000'],
+    servers: [{ id: 'official-test', kind: 'official', host: '127.0.0.1', port: targetPort }],
+  });
+  const address = await gateway.start();
+  t.after(() => gateway.stop());
+
+  const result = await awaitableSocket(address.port, {
+    subprotocol: true,
+    queryToken: true,
+    token: 'test-token',
+    subprotocolToken: 'wrong-token',
+  });
+  assert.match(result.response, /^HTTP\/1\.1 403 Forbidden/);
+  result.connection.destroy();
 });
 
 test('gateway exposes health and forwards TCP and UDP traffic only to an allowlisted target', async (t: TestContext) => {
