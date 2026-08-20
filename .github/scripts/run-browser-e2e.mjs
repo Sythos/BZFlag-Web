@@ -34,6 +34,7 @@ import { createHash } from "node:crypto";
 const repositoryRoot = resolve(process.cwd());
 const clientRoot = resolve(repositoryRoot, "client");
 const fixtureToken = "bzflag-web-e2e-fixture-token";
+const fixtureTokenSubprotocol = `bzflag-token.${Buffer.from(fixtureToken, "utf8").toString("base64url")}`;
 const expectedServerId = "official-main";
 const screenshotPath = process.env.E2E_SCREENSHOT;
 const failures = [];
@@ -228,8 +229,11 @@ function startFixture() {
     const key = request.headers["sec-websocket-key"];
     const origin = request.headers.origin;
     const upgrade = String(request.headers.upgrade || "").toLowerCase();
+    const protocols = String(request.headers["sec-websocket-protocol"] || "")
+      .split(",").map((protocol) => protocol.trim()).filter(Boolean);
     if (url.pathname !== "/bridge" || upgrade !== "websocket" || typeof key !== "string"
-      || url.searchParams.get("server") !== expectedServerId || url.searchParams.get("token") !== fixtureToken
+      || url.searchParams.get("server") !== expectedServerId || url.searchParams.has("token")
+      || !protocols.includes("bzflag-web-v1") || !protocols.includes(fixtureTokenSubprotocol)
       || origin !== `http://127.0.0.1:${server.address()?.port}`) {
       state.errors.push(`Rejected fixture upgrade: ${request.url || ""}`);
       socket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
@@ -237,12 +241,13 @@ function startFixture() {
     }
     state.upgradeCount += 1;
     state.receivedServerId = url.searchParams.get("server");
-    state.receivedToken = url.searchParams.get("token");
+    state.receivedToken = fixtureToken;
     socket.write([
       "HTTP/1.1 101 Switching Protocols",
       "Upgrade: websocket",
       "Connection: Upgrade",
       `Sec-WebSocket-Accept: ${websocketAccept(key)}`,
+      "Sec-WebSocket-Protocol: bzflag-web-v1",
       "\r\n",
     ].join("\r\n"));
 
@@ -493,10 +498,12 @@ async function run() {
       statusClass: document.querySelector("#connection-status")?.className || "",
       player: document.querySelector("#session-player")?.textContent?.trim() || "",
       renderer: document.querySelector("#renderer-label")?.textContent?.trim() || "",
+      worldStateReady: Boolean(window.BZFlagWebGame?.worldState),
       protocolCodes: (window.__bzflagE2ePackets || []).map((packet) => packet.code),
     }));
     if (!/\bsuccess\b/i.test(gameState.statusClass)) fail(`Gateway did not reach connected state: ${gameState.status} (${gameState.statusClass})`);
     if (gameState.player !== "Browser E2E Player") fail(`Session player was not carried into the game page: ${gameState.player}`);
+    if (!gameState.worldStateReady) fail("Client world state module did not load from the compiled dist path");
     if (fixture.state.upgradeCount !== 1) fail(`Fixture observed ${fixture.state.upgradeCount} WebSocket upgrades; expected exactly one`);
     if (!fixture.state.connectHeaderReceived) fail("Fixture did not receive the BZFLAG connect header");
     if (fixture.state.enterPackets < 1) fail("Fixture did not receive a BZFlag MsgEnter packet");

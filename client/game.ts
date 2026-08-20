@@ -1,4 +1,3 @@
-// @ts-nocheck
 /*
 Copyright (c) 2026 Sythos (https://www.sythos.net)
 
@@ -24,12 +23,86 @@ SOFTWARE.
 (() => {
   "use strict";
 
+  type Connection = Record<string, any>;
+  type InputState = {
+    playerId: number | null;
+    physicsReady: boolean;
+    order: number;
+    status: number;
+    timestamp: number;
+    position: [number, number, number];
+    velocity: [number, number, number];
+    azimuth: number;
+    angularVelocity: number;
+    [key: string]: any;
+  };
+  type ProtocolResult = BZFlagWebProtocolResult & {
+    code: number;
+    channel?: number;
+    data?: Record<string, any>;
+    player?: Record<string, any>;
+  };
+  type WorldStateAdapter = {
+    apply(event: ProtocolResult): { applied: boolean };
+    snapshot(): unknown;
+  };
+  type WorldTransferAdapter = {
+    push(chunk: { bytesLeft: number; chunk: Uint8Array }): {
+      complete: boolean;
+      failed: boolean;
+      bytesReceived: number;
+      totalBytes: number | null;
+      bytesLeft: number | null;
+      chunkCount: number;
+      summary: unknown;
+      error?: string;
+    };
+    snapshot(): unknown;
+    reset?(): void;
+  };
+  type ProtocolSession = {
+    connection: Connection;
+    inputState: InputState;
+    worldState: WorldStateAdapter | null;
+    renderer: BZFlagWebRendererHandle;
+    socket: WebSocket | null;
+    handshake: {
+      push(payload: Uint8Array): { ready: boolean; version?: string; playerId?: number; payload: Uint8Array };
+    };
+    handshakeComplete: boolean;
+    serverVersion: string | null;
+    serverPlayerId: number | null;
+    enterSent: boolean;
+    flagNegotiationSent: boolean;
+    udpRequested: boolean;
+    udpReady: boolean;
+    queriesSent: boolean;
+    settingsRequested: boolean;
+    worldHashRequested: boolean;
+    worldTransfer: {
+      started: boolean;
+      complete: boolean;
+      requestedOffset: number | null;
+      offset: number;
+      total: number | null;
+      bytes: Uint8Array;
+      assembler: WorldTransferAdapter | null;
+      snapshot: unknown;
+      summary: unknown;
+    };
+    tcpStream: { push(payload: Uint8Array): Uint8Array[] };
+    udpStream: { push(payload: Uint8Array): Uint8Array[] };
+    [key: string]: any;
+  };
+
   const CONNECTION_KEY = "bzflag-web.connection.v1";
   const BRIDGE_MAGIC = new Uint8Array([0x42, 0x5a, 0x57, 0x42]);
   const BRIDGE_VERSION = 1;
   const CHANNEL_TCP = 0;
   const CHANNEL_UDP = 1;
-  const COMMAND_MAP = {
+  const WEBSOCKET_SUBPROTOCOL = "bzflag-web-v1";
+  const TOKEN_SUBPROTOCOL_PREFIX = "bzflag-token.";
+  const COMMAND_MAP: Record<string, string> = {
     ArrowUp: "move-forward",
     KeyW: "move-forward",
     ArrowDown: "move-backward",
@@ -44,14 +117,14 @@ SOFTWARE.
     KeyT: "open-chat",
     Escape: "open-menu"
   };
-  const AUDIO_ASSETS = Object.freeze({
+  const AUDIO_ASSETS: Record<string, string> = Object.freeze({
     fire: "./assets/upstream/fire.wav",
     explosion: "./assets/upstream/explosion.wav",
     jump: "./assets/upstream/jump.wav",
     flagGrab: "./assets/upstream/flag_grab.wav"
   });
 
-  function createInputState() {
+  function createInputState(): InputState {
     return {
       // A player id is learned from the server's MsgAddPlayer packet. The
       // physics renderer must later provide a fresh snapshot before movement
@@ -68,24 +141,31 @@ SOFTWARE.
     };
   }
 
-  const get = (id) => document.getElementById(id);
-  const t = (key) => window.BZFlagWebI18n?.t(key) || key;
+  const get = <T extends HTMLElement = HTMLElement>(id: string): T => document.getElementById(id) as T;
+  const t = (key: string): string => window.BZFlagWebI18n?.t(key) || key;
 
-  function readConnection() {
+  function readConnection(): Connection | null {
     try {
       const raw = window.sessionStorage.getItem(CONNECTION_KEY);
-      const connection = raw ? JSON.parse(raw) : null;
-      return connection && typeof connection === "object" ? connection : null;
+      const connection: unknown = raw ? JSON.parse(raw) : null;
+      return connection && typeof connection === "object" ? connection as Connection : null;
     } catch {
       return null;
     }
   }
 
-  function safeText(value, fallback = "—") {
+  function safeText(value: unknown, fallback = "—"): string {
     return value === undefined || value === null || value === "" ? fallback : String(value);
   }
 
-  function toWebSocketUrl(endpoint, connection = {}) {
+  function encodeSessionToken(token: string): string {
+    const bytes = new TextEncoder().encode(token);
+    let binary = "";
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  }
+
+  function resolveWebSocketEndpoint(endpoint: unknown, connection: Connection = {}) {
     const value = String(endpoint || "/bridge").trim();
     let resolved;
     if (/^(?:wss?|https?):\/\//i.test(value)) {
@@ -104,11 +184,23 @@ SOFTWARE.
       throw new Error("A gateway session token is required");
     }
     resolved.searchParams.set("server", connection.serverId);
-    resolved.searchParams.set("token", token);
-    return resolved.toString();
+    // Bearer credentials belong in the WebSocket subprotocol offer, not in a
+    // URL that can leak through browser history, referrers, or access logs.
+    resolved.searchParams.delete("token");
+    resolved.hash = "";
+    return { resolved, token };
   }
 
-  function toUint8Array(payload) {
+  function toWebSocketUrl(endpoint: unknown, connection: Connection = {}) {
+    return resolveWebSocketEndpoint(endpoint, connection).resolved.toString();
+  }
+
+  function toWebSocketProtocols(endpoint: unknown, connection: Connection = {}) {
+    const { token } = resolveWebSocketEndpoint(endpoint, connection);
+    return [WEBSOCKET_SUBPROTOCOL, `${TOKEN_SUBPROTOCOL_PREFIX}${encodeSessionToken(token)}`];
+  }
+
+  function toUint8Array(payload: unknown): Uint8Array {
     if (payload instanceof Uint8Array) {
       return payload;
     }
@@ -118,7 +210,7 @@ SOFTWARE.
     return new TextEncoder().encode(String(payload || ""));
   }
 
-  function encodeBridgeMessage(channel, payload) {
+  function encodeBridgeMessage(channel: number, payload: unknown): Uint8Array {
     if (channel !== CHANNEL_TCP && channel !== CHANNEL_UDP) {
       throw new Error("Unsupported bridge channel");
     }
@@ -133,7 +225,7 @@ SOFTWARE.
     return message;
   }
 
-  function decodeBridgeMessage(payload) {
+  function decodeBridgeMessage(payload: unknown): { channel: number; payload: Uint8Array } {
     const message = toUint8Array(payload);
     if (message.byteLength < 8 || !BRIDGE_MAGIC.every((value, index) => message[index] === value)) {
       throw new Error("Invalid BZWB bridge envelope");
@@ -147,7 +239,7 @@ SOFTWARE.
     return { channel: message[5], payload: message.slice(8) };
   }
 
-  function setStatus(message, kind = "") {
+  function setStatus(message: string, kind = ""): void {
     const status = get("connection-status");
     if (!status) {
       return;
@@ -160,7 +252,7 @@ SOFTWARE.
     status.append(dot, document.createTextNode(message));
   }
 
-  function appendEvent(message, kind = "info") {
+  function appendEvent(message: string, kind = "info"): void {
     const feed = get("event-feed");
     if (!feed) {
       return;
@@ -172,6 +264,13 @@ SOFTWARE.
   }
 
   class AudioEngine {
+    enabled: boolean;
+    volume: number;
+    context: AudioContext | null;
+    assetBuffers: Map<string, AudioBuffer>;
+    assetLoads: Map<string, Promise<AudioBuffer | null>>;
+    failedAssets: Set<string>;
+
     constructor(enabled = true) {
       this.enabled = enabled;
       this.volume = 0.7;
@@ -181,16 +280,16 @@ SOFTWARE.
       this.failedAssets = new Set();
     }
 
-    setEnabled(enabled) {
+    setEnabled(enabled: boolean): void {
       this.enabled = enabled;
       this.updateState();
     }
 
-    setVolume(value) {
+    setVolume(value: unknown): void {
       this.volume = Math.min(1, Math.max(0, Number(value)));
     }
 
-    async resume() {
+    async resume(): Promise<boolean | undefined> {
       if (!this.enabled) {
         return;
       }
@@ -207,15 +306,16 @@ SOFTWARE.
       return true;
     }
 
-    async loadAsset(name) {
-      if (!this.context || !AUDIO_ASSETS[name] || this.failedAssets.has(name)) {
+    async loadAsset(name: string): Promise<AudioBuffer | null> {
+      const context = this.context;
+      if (!context || !AUDIO_ASSETS[name] || this.failedAssets.has(name)) {
         return null;
       }
       if (this.assetBuffers.has(name)) {
-        return this.assetBuffers.get(name);
+        return this.assetBuffers.get(name) ?? null;
       }
       if (this.assetLoads.has(name)) {
-        return this.assetLoads.get(name);
+        return this.assetLoads.get(name) ?? null;
       }
       const load = fetch(AUDIO_ASSETS[name], { cache: "force-cache" })
         .then((response) => {
@@ -224,7 +324,7 @@ SOFTWARE.
           }
           return response.arrayBuffer();
         })
-        .then((bytes) => this.context.decodeAudioData(bytes))
+        .then((bytes) => context.decodeAudioData(bytes as ArrayBuffer))
         .then((buffer) => {
           this.assetBuffers.set(name, buffer);
           return buffer;
@@ -239,7 +339,7 @@ SOFTWARE.
       return load;
     }
 
-    async preload(names = Object.keys(AUDIO_ASSETS)) {
+    async preload(names: string[] = Object.keys(AUDIO_ASSETS)): Promise<number> {
       if (!this.enabled || !this.context) {
         return 0;
       }
@@ -247,7 +347,7 @@ SOFTWARE.
       return buffers.filter(Boolean).length;
     }
 
-    async play(name, frequency = 360, duration = 0.05) {
+    async play(name: string, frequency = 360, duration = 0.05): Promise<void> {
       if (!this.enabled) {
         return;
       }
@@ -268,7 +368,7 @@ SOFTWARE.
       await this.beep(frequency, duration);
     }
 
-    async beep(frequency = 360, duration = 0.05) {
+    async beep(frequency = 360, duration = 0.05): Promise<void> {
       if (!this.enabled) {
         return;
       }
@@ -287,7 +387,7 @@ SOFTWARE.
       oscillator.stop(this.context.currentTime + duration);
     }
 
-    updateState() {
+    updateState(): void {
       const label = get("audio-state");
       const toggle = get("audio-toggle");
       if (label) {
@@ -299,7 +399,7 @@ SOFTWARE.
     }
   }
 
-  function updateSessionDetails(connection) {
+  function updateSessionDetails(connection: Connection): void {
     const nickname = safeText(connection?.nickname, "Player");
     const server = connection?.serverId ? `${connection.serverId}${connection.port ? `:${connection.port}` : ""}` : "Gateway session";
     const gateway = safeText(connection?.gateway, "/bridge");
@@ -312,18 +412,18 @@ SOFTWARE.
     get("sidebar-gateway").textContent = gateway;
   }
 
-  function sendSessionPacket(session, channel, packet) {
+  function sendSessionPacket(session: ProtocolSession, channel: number, packet: Uint8Array | null | undefined): boolean {
     if (!packet || !session?.socket || session.socket.readyState !== WebSocket.OPEN) {
       return false;
     }
-    session.socket.send(encodeBridgeMessage(channel, packet));
+    session.socket.send(encodeBridgeMessage(channel, packet) as unknown as ArrayBuffer);
     return true;
   }
 
-  function sendInitialProtocolPackets(session) {
+  function sendInitialProtocolPackets(session: ProtocolSession): void {
     const protocol = window.BZFlagWebProtocol;
     if (!protocol || !session.handshakeComplete || session.enterSent) return;
-    const playerId = session.handshake?.playerId;
+    const playerId = session.serverPlayerId;
     session.inputState.playerId = Number.isInteger(playerId) ? playerId : null;
     if (session.connection.useUDP !== false && protocol.encodeUDPLinkRequest && playerId !== null) {
       session.udpRequested = sendSessionPacket(session, CHANNEL_UDP, protocol.encodeUDPLinkRequest(playerId));
@@ -337,53 +437,77 @@ SOFTWARE.
     if (session.enterSent) appendEvent("BZFlag enter packet sent.");
   }
 
-  function appendWorldChunk(session, result) {
+  function appendWorldChunk(session: ProtocolSession, result: ProtocolResult): void {
+    const protocol = window.BZFlagWebProtocol;
+    if (!protocol) return;
     const data = result?.data;
     if (!data || !Number.isInteger(data.bytesLeft) || !data.chunk) return;
     const transfer = session.worldTransfer;
     const chunk = data.chunk instanceof Uint8Array ? data.chunk : new Uint8Array(data.chunk);
-    const nextOffset = transfer.offset + chunk.byteLength;
-    if (nextOffset > window.BZFlagWebProtocol.MAX_WORLD_BYTES) {
-      throw new RangeError("BZFlag world database exceeds the client limit");
+    if (!transfer.assembler) {
+      throw new Error("BZFlag world transfer assembler is unavailable");
     }
-    if (transfer.total === null) transfer.total = data.bytesLeft + chunk.byteLength;
-    if (data.bytesLeft !== transfer.total - nextOffset) {
-      throw new Error("BZFlag world chunk offset is inconsistent");
-    }
-    if (chunk.byteLength > 0) transfer.chunks.push(chunk.slice());
-    transfer.offset = nextOffset;
-    if (data.bytesLeft > 0) {
-      if (transfer.requestedOffset === nextOffset) return;
-      transfer.requestedOffset = nextOffset;
-      if (window.BZFlagWebProtocol.encodeGetWorld) {
-        sendSessionPacket(session, CHANNEL_TCP, window.BZFlagWebProtocol.encodeGetWorld(nextOffset));
+    const snapshot = transfer.assembler.push({ bytesLeft: data.bytesLeft, chunk });
+    transfer.snapshot = snapshot;
+    transfer.offset = Number(snapshot.bytesReceived) || 0;
+    transfer.total = Number.isInteger(snapshot.totalBytes) ? Number(snapshot.totalBytes) : null;
+    transfer.complete = snapshot.complete === true;
+    transfer.summary = snapshot.summary || null;
+    if (!snapshot.complete) {
+      const nextOffset = transfer.offset;
+      if (data.bytesLeft > 0) {
+        if (transfer.requestedOffset === nextOffset) return;
+        transfer.requestedOffset = nextOffset;
+        if (protocol.encodeGetWorld) {
+          sendSessionPacket(session, CHANNEL_TCP, protocol.encodeGetWorld(nextOffset));
+        }
+        appendEvent(`World transfer: ${nextOffset} bytes received.`);
       }
-      appendEvent(`World transfer: ${nextOffset} bytes received.`);
       return;
     }
-    transfer.complete = true;
     transfer.requestedOffset = null;
-    const world = new Uint8Array(transfer.offset);
-    let offset = 0;
-    for (const part of transfer.chunks) {
-      world.set(part, offset);
-      offset += part.byteLength;
+    if (!transfer.summary) {
+      throw new Error("BZFlag world transfer completed without a safe summary");
     }
-    transfer.bytes = world;
-    appendEvent(`World transfer complete (${world.byteLength} bytes).`);
+    const worldSummary = transfer.summary;
+    transfer.bytes = new Uint8Array();
+    appendEvent(`World transfer complete (${transfer.offset} bytes).`);
+    (session.renderer as BZFlagWebRendererHandle & {
+      setWorldData?: (summary: unknown) => void;
+    })?.setWorldData?.(worldSummary);
     if (typeof document !== "undefined") {
       document.dispatchEvent(new CustomEvent("bzflag:world-ready", {
-        detail: { bytes: world.slice(), totalBytes: world.byteLength }
+        detail: Object.freeze({
+          bytesReceived: transfer.offset,
+          totalBytes: transfer.total,
+          chunkCount: snapshot.chunkCount,
+          world: worldSummary
+        })
       }));
     }
   }
 
-  function handleProtocolFollowUp(session, result) {
+  function beginWorldTransfer(session: ProtocolSession): void {
+    const transfer = session.worldTransfer;
+    if (!transfer.assembler) {
+      throw new Error("BZFlag world transfer assembler is unavailable");
+    }
+    if (transfer.complete || transfer.started) return;
+    transfer.started = true;
+    transfer.requestedOffset = 0;
+    transfer.assembler.reset?.();
+    transfer.snapshot = transfer.assembler.snapshot?.() || null;
+    if (window.BZFlagWebProtocol?.encodeGetWorld) {
+      sendSessionPacket(session, CHANNEL_TCP, window.BZFlagWebProtocol.encodeGetWorld(0));
+    }
+  }
+
+  function handleProtocolFollowUp(session: ProtocolSession, result: ProtocolResult): void {
     const protocol = window.BZFlagWebProtocol;
     if (!protocol || !result || result.valid === false) return;
     if (result.code === protocol.MSG_UDP_LINK_REQUEST) {
       if (protocol.encodeUDPLinkEstablished) {
-        sendSessionPacket(session, result.channel, protocol.encodeUDPLinkEstablished());
+        sendSessionPacket(session, result.channel ?? CHANNEL_TCP, protocol.encodeUDPLinkEstablished());
       }
       return;
     }
@@ -401,7 +525,7 @@ SOFTWARE.
       return;
     }
     if (result.code === protocol.MSG_NEGOTIATE_FLAGS) {
-      if (result.data?.missing) appendEvent(`Server reports unsupported flags: ${result.data.flags.join(", ")}.`, "warning");
+      if (result.data?.missing && Array.isArray(result.data.flags)) appendEvent(`Server reports unsupported flags: ${result.data.flags.join(", ")}.`, "warning");
       if (!session.settingsRequested && protocol.encodeNoPayload) {
         session.settingsRequested = true;
         sendSessionPacket(session, CHANNEL_TCP, protocol.encodeNoPayload(protocol.MSG_WANT_SETTINGS));
@@ -416,11 +540,7 @@ SOFTWARE.
       return;
     }
     if (result.code === protocol.MSG_WANT_W_HASH) {
-      if (!session.worldTransfer.started && protocol.encodeGetWorld) {
-        session.worldTransfer.started = true;
-        session.worldTransfer.requestedOffset = 0;
-        sendSessionPacket(session, CHANNEL_TCP, protocol.encodeGetWorld(0));
-      }
+      beginWorldTransfer(session);
       return;
     }
     if (result.code === protocol.MSG_GET_WORLD) {
@@ -428,12 +548,13 @@ SOFTWARE.
     }
   }
 
-  function connectGateway(connection, onMessage) {
-    let socket;
+  function connectGateway(connection: Connection, onMessage: (data: unknown) => void): WebSocket | null {
+    let socket: WebSocket;
     try {
-      socket = new WebSocket(toWebSocketUrl(connection?.gateway, connection));
+      const endpoint = toWebSocketUrl(connection?.gateway, connection);
+      socket = new WebSocket(endpoint, toWebSocketProtocols(connection?.gateway, connection));
     } catch (error) {
-      const message = error.message === "A gateway session token is required" ? t("missingSessionToken") : t("invalidGateway");
+      const message = error instanceof Error && error.message === "A gateway session token is required" ? t("missingSessionToken") : t("invalidGateway");
       setStatus(message, "error");
       appendEvent(message, "error");
       return null;
@@ -444,7 +565,7 @@ SOFTWARE.
       appendEvent(`Binary BZWB bridge ready for server ID ${safeText(connection?.serverId)}.`);
       const protocol = window.BZFlagWebProtocol;
       if (protocol?.encodeConnectHeader) {
-        socket.send(encodeBridgeMessage(CHANNEL_TCP, protocol.encodeConnectHeader()));
+        socket.send(encodeBridgeMessage(CHANNEL_TCP, protocol.encodeConnectHeader()) as unknown as ArrayBuffer);
         appendEvent("BZFlag protocol handshake sent.");
       } else {
         setStatus("BZFlag protocol adapter unavailable", "error");
@@ -462,7 +583,7 @@ SOFTWARE.
     return socket;
   }
 
-  function handleGatewayMessage(data, session = {}) {
+  function handleGatewayMessage(data: unknown, session: ProtocolSession): void {
     try {
       const bridge = decodeBridgeMessage(data);
       const protocol = window.BZFlagWebProtocol;
@@ -472,9 +593,9 @@ SOFTWARE.
           const greeting = session.handshake.push(bridge.payload);
           if (!greeting.ready) return;
           session.handshakeComplete = true;
-          session.serverVersion = greeting.version;
-          session.serverPlayerId = greeting.playerId;
-          session.inputState.playerId = greeting.playerId;
+          session.serverVersion = greeting.version ?? null;
+          session.serverPlayerId = greeting.playerId ?? null;
+          session.inputState.playerId = greeting.playerId ?? null;
           appendEvent(`BZFS ${greeting.version} handshake complete; gateway player ID ${greeting.playerId}.`);
           sendInitialProtocolPackets(session);
           serverPayload = greeting.payload;
@@ -483,7 +604,7 @@ SOFTWARE.
         const stream = bridge.channel === CHANNEL_TCP ? session.tcpStream : session.udpStream;
         const packets = stream ? stream.push(serverPayload) : [serverPayload];
         for (const packet of packets) {
-          const result = protocol.consume(bridge.channel, packet, { nickname: session.connection?.nickname });
+          const result = protocol.consume(bridge.channel, packet, { nickname: session.connection?.nickname }) as ProtocolResult;
           const transition = session.worldState?.apply(result);
           if (transition?.applied && session.worldState) {
             const snapshot = session.worldState.snapshot();
@@ -495,7 +616,7 @@ SOFTWARE.
             }
           }
           if (result?.local && result.player && session.inputState) {
-            session.inputState.playerId = result.player.playerId;
+            session.inputState.playerId = Number.isInteger(result.player.playerId) ? Number(result.player.playerId) : null;
             appendEvent(`Assigned BZFlag player ID ${result.player.playerId}.`);
           }
           if (result?.data && session.inputState && result.data.playerId === session.inputState.playerId) {
@@ -512,27 +633,33 @@ SOFTWARE.
       /* Text frames are intentionally not accepted: the gateway rejects them
          and the browser client must remain binary-only for protocol safety. */
       session.protocolError = true;
-      setStatus(error.message || "Invalid binary bridge frame", "error");
-      appendEvent(error.message || "Invalid binary bridge frame", "error");
+      const message = error instanceof Error ? error.message : "Invalid binary bridge frame";
+      setStatus(message, "error");
+      appendEvent(message, "error");
       if (session.socket?.readyState === WebSocket.OPEN) session.socket.close(1002, "BZFlag protocol error");
     }
   }
 
-  function bindKeyboard(socket, audio, getInputState = () => ({}), getChannel = () => CHANNEL_TCP) {
+  function bindKeyboard(
+    socket: WebSocket | null,
+    audio: AudioEngine,
+    getInputState: (command?: string, phase?: string, key?: string) => Record<string, any> = () => ({}),
+    getChannel: (command?: string, phase?: string, state?: Record<string, any>, payload?: Uint8Array) => number = () => CHANNEL_TCP
+  ): () => void {
     const pressed = new Set();
-    const sendCommand = (command, phase, key) => {
+    const sendCommand = (command: string, phase: string, key: string): void => {
       const protocol = window.BZFlagWebProtocol;
       if (socket?.readyState === WebSocket.OPEN && protocol?.encodeInput) {
         const state = getInputState(command, phase, key) || {};
         const payload = protocol.encodeInput(command, phase, key, state);
         if (payload) {
           const channel = getChannel(command, phase, state, payload);
-          socket.send(encodeBridgeMessage(channel, payload));
+        socket.send(encodeBridgeMessage(channel, payload) as unknown as ArrayBuffer);
         }
       }
       appendEvent(`${command} (${phase})`);
     };
-    const handleKeyDown = (event) => {
+    const handleKeyDown = (event: KeyboardEvent): void => {
       if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement) {
         return;
       }
@@ -550,7 +677,7 @@ SOFTWARE.
         audio.play("fire", 420, 0.06);
       }
     };
-    const handleKeyUp = (event) => {
+    const handleKeyUp = (event: KeyboardEvent): void => {
       const command = COMMAND_MAP[event.code];
       if (!command) {
         return;
@@ -566,9 +693,9 @@ SOFTWARE.
     };
   }
 
-  function bindControls(audio, renderer) {
+  function bindControls(audio: AudioEngine, renderer: BZFlagWebRendererHandle): void {
     const audioToggle = get("audio-toggle");
-    const volume = get("volume");
+    const volume = get<HTMLInputElement>("volume");
     const fullscreen = get("fullscreen-button");
     const disconnect = get("disconnect-button");
     audioToggle?.addEventListener("click", async () => {
@@ -588,13 +715,13 @@ SOFTWARE.
       }
     });
     disconnect?.addEventListener("click", () => {
-      renderer?.stop();
+      renderer.stop?.();
       window.sessionStorage.removeItem(CONNECTION_KEY);
       window.location.assign("./index.html");
     });
   }
 
-  function updateRendererStatus(mode) {
+  function updateRendererStatus(mode: string): void {
     const badge = get("renderer-badge");
     const label = get("renderer-label");
     const webgpuState = get("webgpu-state");
@@ -609,7 +736,7 @@ SOFTWARE.
     if (mode === "unavailable") appendEvent(t("webglUnavailable"), "error");
   }
 
-  async function init() {
+  async function init(): Promise<void> {
     if (document.documentElement.dataset.page !== "game") {
       return;
     }
@@ -625,30 +752,54 @@ SOFTWARE.
     updateSessionDetails(connection);
     const audio = new AudioEngine(connection.audioEnabled !== false);
     audio.updateState();
-    const canvas = get("game-canvas");
+    const canvas = get<HTMLCanvasElement>("game-canvas");
     const inputState = createInputState();
-    let worldState = null;
+    let worldAssembler: WorldTransferAdapter | null = null;
     try {
-      const stateModule = await import("./state.js");
-      worldState = stateModule.createWorldState({ nickname: connection.nickname });
+      const worldModule = await import(new URL("./dist/world.js", window.location.href).href);
+      const worldTransferLimit = window.BZFlagWebProtocol?.MAX_WORLD_BYTES;
+      if (typeof worldModule.createWorldTransferAssembler === "function") {
+        worldAssembler = worldModule.createWorldTransferAssembler({
+          maxTransferBytes: Number.isInteger(worldTransferLimit)
+            ? worldTransferLimit
+            : undefined
+        });
+      }
     } catch (error) {
-      appendEvent(`World state module unavailable: ${error.message || "load failure"}`, "warning");
+      appendEvent(`World transfer module unavailable: ${error instanceof Error ? error.message : "load failure"}`, "warning");
     }
-    const renderer = await window.BZFlagWebRenderer.createRenderer(canvas, {
+    let worldState: WorldStateAdapter | null = null;
+    try {
+      const stateModule = await import(new URL("./dist/state.js", window.location.href).href);
+      worldState = stateModule.createWorldState();
+    } catch (error) {
+      appendEvent(`World state module unavailable: ${error instanceof Error ? error.message : "load failure"}`, "warning");
+    }
+    const rendererApi = window.BZFlagWebRenderer;
+    if (!rendererApi) {
+      appendEvent("Renderer module unavailable.", "error");
+      return;
+    }
+    const renderer = await rendererApi.createRenderer(canvas, {
       preferWebGPU: connection.preferWebGPU !== false,
       worldState
     });
     renderer.setWorldState?.(worldState);
     updateRendererStatus(renderer.mode);
     bindControls(audio, renderer);
-    const protocolSession = {
+    const protocolApi = window.BZFlagWebProtocol;
+    if (!protocolApi) {
+      appendEvent("BZFlag protocol module unavailable.", "error");
+      return;
+    }
+    const protocolSession: ProtocolSession = {
       connection,
       inputState,
       worldState,
       renderer,
       socket: null,
-      handshake: new window.BZFlagWebProtocol.ServerHandshake({
-        expectedVersion: connection.serverProtocol || window.BZFlagWebProtocol.DEFAULT_SERVER_VERSION
+      handshake: new protocolApi.ServerHandshake({
+        expectedVersion: connection.serverProtocol || protocolApi.DEFAULT_SERVER_VERSION
       }),
       handshakeComplete: false,
       serverVersion: null,
@@ -666,15 +817,17 @@ SOFTWARE.
         requestedOffset: null,
         offset: 0,
         total: null,
-        chunks: [],
-        bytes: new Uint8Array()
+        bytes: new Uint8Array(),
+        assembler: worldAssembler,
+        snapshot: worldAssembler?.snapshot?.() || null,
+        summary: null
       },
-      tcpStream: new window.BZFlagWebProtocol.PacketStream(),
-      udpStream: new window.BZFlagWebProtocol.PacketStream()
+      tcpStream: new protocolApi.PacketStream(),
+      udpStream: new protocolApi.PacketStream()
     };
     const socket = connectGateway(connection, (data) => handleGatewayMessage(data, protocolSession));
     protocolSession.socket = socket;
-    bindKeyboard(socket, audio, (command, phase) => {
+    bindKeyboard(socket, audio, (command = "", phase = "") => {
       renderer.handleInput?.(command, phase);
       // Until the renderer supplies a physics snapshot, this remains null for
       // movement and shot commands. Local key handling still works and is ready
@@ -685,7 +838,7 @@ SOFTWARE.
         return inputState;
       }
       return { command, phase };
-    }, (command) => {
+    }, (command = "") => {
       const udpCommands = new Set(["move-forward", "move-backward", "turn-left", "turn-right", "fire"]);
       return protocolSession.udpReady && udpCommands.has(command) ? CHANNEL_UDP : CHANNEL_TCP;
     });
@@ -716,7 +869,8 @@ SOFTWARE.
     AudioEngine,
     decodeBridgeMessage,
     encodeBridgeMessage,
-    toWebSocketUrl
+    toWebSocketUrl,
+    toWebSocketProtocols
   };
   document.addEventListener("DOMContentLoaded", init);
 })();

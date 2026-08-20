@@ -10,6 +10,8 @@
     "http://127.0.0.1"
   ],
   "allowCustomServers": false,
+  "allowPrivateAddresses": false,
+  "allowLegacyQueryToken": true,
   "protocolVersion": "0221",
   "bzflagVersion": "2.4.31",
   "servers": [

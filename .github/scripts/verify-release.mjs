@@ -100,6 +100,10 @@ function requireMarker(source, path, marker) {
 }
 
 function resolveLocalReference(baseDirectory, reference, label) {
+  if (/^(?:[A-Za-z]:[\\/]|[\\/]{1,2}|file:)/i.test(reference)) {
+    failures.push(`${label}: local references must be relative: ${reference}`);
+    return;
+  }
   if (!reference.startsWith("./")) return;
   const withoutQuery = reference.split(/[?#]/, 1)[0];
   const target = resolve(baseDirectory, withoutQuery);
@@ -109,6 +113,62 @@ function resolveLocalReference(baseDirectory, reference, label) {
     return;
   }
   return requireFile(relative(repositoryRoot, target), `${label} -> ${reference}`);
+}
+
+function validateAssetManifest(manifestText) {
+  let manifest;
+  try {
+    manifest = JSON.parse(manifestText);
+  } catch {
+    failures.push("client/assets/asset-manifest.json: invalid JSON");
+    return;
+  }
+  if (!manifest || manifest["relative-to"] !== "./") {
+    failures.push("client/assets/asset-manifest.json: relative-to must be ./");
+  }
+  if (!Array.isArray(manifest.entries) || manifest.entries.length === 0) {
+    failures.push("client/assets/asset-manifest.json: entries must be a non-empty array");
+    return;
+  }
+  const seen = new Set();
+  const upstreamManifest = manifest.upstream;
+  for (const [index, entry] of manifest.entries.entries()) {
+    const label = `client/assets/asset-manifest.json entry ${index}`;
+    if (!entry || typeof entry !== "object") {
+      failures.push(`${label}: entry must be an object`);
+      continue;
+    }
+    const path = String(entry.path || "");
+    if (!path.startsWith("./") || /^(?:[A-Za-z]:[\\/]|[\\/]{1,2})/.test(path) || path.includes("\\") || path.includes("../") || path.includes("/..") || path.includes("//") || path.includes("/./") || path.endsWith("/.")) {
+      failures.push(`${label}: path must be a normalized relative reference: ${path}`);
+      continue;
+    }
+    if (seen.has(path)) failures.push(`${label}: duplicate path ${path}`);
+    seen.add(path);
+    if (!String(entry.source || "").trim()) failures.push(`${label}: source is required`);
+    const license = String(entry.license || "");
+    if (!license.trim()) failures.push(`${label}: license is required`);
+    if (path.startsWith("./assets/upstream/fonts/")) {
+      if (!license.includes("DejaVu")) failures.push(`${label}: DejaVu font entry must retain its local license notice`);
+    } else if (path.startsWith("./assets/upstream/") && path !== "./assets/upstream/README.md") {
+      if (!license.includes("LGPL-2.1-only") || !license.includes("MPL-2.0")) {
+        failures.push(`${label}: upstream asset must retain both LGPL-2.1-only and MPL-2.0 provenance`);
+      }
+    } else if (!license.includes("MIT")) {
+      failures.push(`${label}: original project asset must declare MIT`);
+    }
+  }
+  if (!upstreamManifest || typeof upstreamManifest !== "object") {
+    failures.push("client/assets/asset-manifest.json: upstream provenance object is required");
+  } else {
+    for (const field of ["project", "version", "ref", "branch"]) {
+      if (String(upstreamManifest[field] || "") !== String(rootPackage?.["x-upstream"]?.[field] || "")) {
+        failures.push(`client/assets/asset-manifest.json: upstream.${field} does not match package.json x-upstream.${field}`);
+      }
+    }
+  }
+  const baseDirectory = resolve(repositoryRoot, "client");
+  for (const path of seen) resolveLocalReference(baseDirectory, path, "client/assets/asset-manifest.json");
 }
 
 const releaseTag = requireValue(option("--tag") || process.env.RELEASE_TAG, "A release tag is required");
@@ -148,6 +208,18 @@ if (serverPackage && serverPackage.version !== releaseTag.slice(1)) {
 }
 if (clientPackage && clientPackage.version !== releaseTag.slice(1)) {
   failures.push(`client/package.json: version ${clientPackage.version} does not match ${releaseTag.slice(1)}`);
+}
+
+for (const [path, packageData] of [["package.json", rootPackage], ["client/package.json", clientPackage], ["server/package.json", serverPackage]]) {
+  if (!packageData) continue;
+  if (packageData.license !== "MIT") failures.push(`${path}: release package metadata must declare MIT for original project material`);
+  if (!String(packageData.author || "").includes("Sythos (https://www.sythos.net)")) {
+    failures.push(`${path}: Sythos attribution is missing from package metadata`);
+  }
+  const header = String(packageData["x-license-header"] || "");
+  for (const marker of ["SPDX-License-Identifier: MIT", "Permission is hereby granted, free of charge", "THE SOFTWARE IS PROVIDED \"AS IS\""]) {
+    if (!header.includes(marker)) failures.push(`${path}: x-license-header is missing ${marker}`);
+  }
 }
 
 const upstream = rootPackage?.["x-upstream"];
@@ -212,7 +284,7 @@ const requiredReleaseFiles = [
   "server/package.json",
   "server/package-lock.json",
   "server/dist/gateway.js",
-  "server/LICENSE-MIT",
+  "server/LEGAL-MIT.txt",
   "server/Dockerfile",
 ];
 for (const path of requiredReleaseFiles) await requireFile(path);
@@ -265,11 +337,12 @@ const htmlFiles = ["client/index.html", "client/web_game_run.html", "server/inde
 for (const path of htmlFiles) {
   const source = await readText(path);
   const baseDirectory = resolve(repositoryRoot, dirname(path));
-  for (const match of source.matchAll(/(?:src|href)=["'](\.[/][^"'?#]*)/gi)) {
+  for (const match of source.matchAll(/(?:src|href)=["']([^"']*)/gi)) {
     await resolveLocalReference(baseDirectory, match[1], path);
   }
 }
 
+validateAssetManifest(await readText("client/assets/asset-manifest.json"));
 const manifestText = await readText("client/manifest.webmanifest");
 try {
   const manifest = JSON.parse(manifestText);
@@ -283,7 +356,8 @@ try {
 
 const serviceWorker = await readText("client/service-worker.ts");
 const serviceWorkerBase = resolve(repositoryRoot, "client");
-for (const match of serviceWorker.matchAll(/["'](\.[/][^"']+)["']/g)) {
+for (const match of serviceWorker.matchAll(/["']([^"']+)["']/g)) {
+  if (match[1] === "./") continue;
   await resolveLocalReference(serviceWorkerBase, match[1], "client/service-worker.ts");
 }
 

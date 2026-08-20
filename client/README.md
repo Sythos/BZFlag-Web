@@ -48,6 +48,9 @@ Serve this directory from a static HTTP server. `localhost` is suitable for
 development; HTTPS is required for WebGPU and service-worker/PWA behaviour on a
 deployed origin.
 
+The build toolchain requires Node.js 26.7.0 (or a newer supported stable
+release) and npm. The exact runtime and lockfile versions are checked by CI.
+
 Run these commands from `client/`:
 
 ```sh

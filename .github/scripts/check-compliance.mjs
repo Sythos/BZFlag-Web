@@ -35,9 +35,30 @@ import { extname, join, relative, resolve, sep } from "node:path";
 const failures = [];
 const rootFiles = ["COPYING", "COPYING.LGPL", "COPYING.MPL", "LICENSE-MIT"];
 const provenanceFiles = ["NOTICE", "ATTRIBUTION.md", "AUTHORS"];
+const standaloneLicenseFiles = ["server/LEGAL-MIT.txt"];
 const metadataFiles = ["package.json", "client/package.json", "client/manifest.webmanifest", "server/config.example.json"];
 const dependencyLockFiles = ["client/package-lock.json", "server/package-lock.json"];
 const metadataObjects = new Map();
+const SYTHOS_HOST = "www.sythos.net";
+
+function hasSythosAttribution(metadata) {
+  const candidates = [metadata?.author, metadata?._license, metadata?.["x-license-header"], metadata?.["x-brand-source"]];
+  for (const candidate of candidates) {
+    if (typeof candidate !== "string") continue;
+    if (candidate === "Sythos (https://www.sythos.net)") return true;
+    for (const match of candidate.matchAll(/https?:\/\/[^\s)<>\"']+/g)) {
+      try {
+        const url = new URL(match[0]);
+        if (url.protocol === "https:" && url.hostname === SYTHOS_HOST && url.pathname === "/" && !url.search && !url.hash) {
+          return true;
+        }
+      } catch {
+        // Ignore malformed metadata URLs; the caller will report missing attribution.
+      }
+    }
+  }
+  return false;
+}
 
 const exists = async (path) => {
   try {
@@ -58,6 +79,33 @@ for (const file of provenanceFiles) {
   if (!(await exists(file))) failures.push(`missing required provenance file: ${file}`);
 }
 
+const canonicalMitText = await (async () => {
+  try {
+    return await readFile("LICENSE-MIT", "utf8");
+  } catch {
+    return "";
+  }
+})();
+
+for (const file of standaloneLicenseFiles) {
+  if (!(await exists(file))) {
+    failures.push(`missing required standalone license file: ${file}`);
+    continue;
+  }
+  const source = await readFile(file, "utf8");
+  for (const marker of [
+    "SPDX-License-Identifier: MIT",
+    "Copyright (c) 2026 Sythos (https://www.sythos.net)",
+    "Permission is hereby granted, free of charge",
+    "THE SOFTWARE IS PROVIDED \"AS IS\"",
+  ]) {
+    if (!source.includes(marker)) failures.push(`${file}: license text is missing ${marker}`);
+  }
+  if (canonicalMitText && source.trimEnd() !== canonicalMitText.trimEnd()) {
+    failures.push(`${file}: standalone MIT text must match the repository LICENSE-MIT text`);
+  }
+}
+
 for (const file of metadataFiles) {
   if (!(await exists(file))) {
     failures.push(`missing required project metadata: ${file}`);
@@ -73,7 +121,7 @@ for (const file of metadataFiles) {
   metadataObjects.set(file, metadata);
   const source = JSON.stringify(metadata).toLowerCase();
   if (!source.includes("mit")) failures.push(`${file}: missing MIT license metadata`);
-  if (!source.includes("sythos") || !source.includes("sythos.net")) {
+  if (!hasSythosAttribution(metadata)) {
     failures.push(`${file}: missing Sythos attribution metadata`);
   }
   const licenseHeader = String(metadata["x-license-header"] || metadata._license || "");

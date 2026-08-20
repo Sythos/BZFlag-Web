@@ -35,6 +35,7 @@ const requiredFiles = [
   "renderer.ts",
   "protocol.ts",
   "state.ts",
+  "world.ts",
   "game.ts",
   "service-worker.ts",
   "build.mjs",
@@ -43,10 +44,12 @@ const requiredFiles = [
   "dist/i18n.js",
   "dist/protocol.js",
   "dist/state.js",
+  "dist/world.js",
   "dist/renderer.js",
   "dist/service-worker.js",
   "service-worker.js",
   "tests/protocol.test.mjs",
+  "tests/world.test.mjs",
   "manifest.webmanifest",
   "assets/favicon.svg",
   "assets/social-card.svg",
@@ -158,6 +161,7 @@ if (!index.includes('id="gateway-endpoint"') || !index.includes('id="gateway-end
 }
 
 await import("./protocol.test.mjs");
+await import("./world.test.mjs");
 await import("./i18n.test.mjs");
 await import("./service-worker.test.mjs");
 

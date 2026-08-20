@@ -37,8 +37,8 @@ remain rejected until a future operator-approved policy enables them.
 
 ==> Requirements
 
-=> Node.js 26 or a newer supported stable release. CI and the Docker image use
-   Node.js 26.
+=> Node.js 26.7.0 or a newer supported stable release. CI and the Docker image use
+   Node.js 26.7.0.
 => npm for the TypeScript 7.0.2 build and development checks. The production
    runtime has no third-party dependency.
 => A browser client served from an origin listed exactly in `allowedOrigins`.
@@ -90,17 +90,27 @@ design.
 | --- | --- |
 | `host`, `port` | Local listener. Keep it private until TLS and proxy rules are ready. |
 | `sessionToken` | Required browser session token. |
+| `allowLegacyQueryToken` | Keep `true` only while older clients still send the token in the query string; set `false` after migration to the subprotocol transport. |
 | `allowedOrigins` | Exact `http://` or `https://` browser origins. Do not use `*`. |
 | `servers` | The only target addresses the gateway may dial. |
 | `allowCustomServers` | Keep `false` for official-server-only operation. |
+| `allowPrivateAddresses` | Keep `false` in production. Set `true` only for an explicitly isolated local fixture or development test. |
 | `limits` | Frame, control-frame, continuation, queue, throughput, handshake, parser, session and idle limits. |
 | `trustProxy`, `trustedProxyPeers` | Forwarded client IPs are used only when the direct peer is an exact trusted proxy address. |
 
-The browser submits a target identifier rather than a host or port:
+The browser submits a target identifier rather than a host or port. Current
+clients send the bearer in the WebSocket subprotocol offer, so it is not part
+of the URL:
 
 ```text
-ws(s)://gateway.example.test/bridge?server=official-main&token=YOUR_SESSION_TOKEN
+ws(s)://gateway.example.test/bridge?server=official-main
 ```
+
+The offer contains `bzflag-web-v1` and a `bzflag-token.<base64url-token>` entry;
+the gateway authenticates the token and returns `Sec-WebSocket-Protocol:
+bzflag-web-v1`. The `allowLegacyQueryToken` compatibility switch accepts the
+older `?token=...` form until all deployed clients have migrated. Disable it in
+production once that transition is complete.
 
 The service does not trust `Host`, client-supplied target addresses or
 `X-Forwarded-For` by default. `trustProxy` is rejected unless
@@ -109,6 +119,12 @@ forwarded address is accepted only from an exact trusted peer and only when the
 first forwarded value is itself a literal IP. CIDR ranges and proxy hostnames
 are deliberately not accepted. The forwarded address affects only per-client
 session counting.
+
+Target hostnames are resolved once per connection and the resulting address is
+pinned for both TCP and UDP. Private, loopback, link-local, multicast,
+metadata-service, documentation and other reserved address ranges are rejected
+by default. `allowPrivateAddresses` is a local-fixture escape hatch only; do not
+enable it on a public gateway.
 
 ==> WebSocket bridge envelope
 
@@ -146,6 +162,8 @@ a frame that remains incomplete after its first bytes arrive.
 
 => Exact Origin allowlisting is required for every WebSocket upgrade.
 => A constant-time session-token comparison is required for every bridge session.
+=> New clients carry the bearer in the WebSocket subprotocol instead of the URL;
+   query-string authentication is an explicit, temporary compatibility mode.
 => Target hosts and ports come only from the operator configuration allowlist.
 => Custom entries are denied while `allowCustomServers` is `false`.
 => Frame size, buffered output, message rate, byte rate, total sessions,
@@ -176,7 +194,7 @@ docker run --rm --name bzflag-web-gateway \
   sythos/bzflag-web-gateway:local
 ```
 
-The multi-stage image uses `node:26-alpine` to compile TypeScript in a
+The multi-stage image uses `node:26.7.0-alpine` to compile TypeScript in a
 disposable build stage. The final image contains only the compiled gateway, its
 installation page, `package.json` and the standalone MIT license. Configuration
 is mounted at runtime. The container runs as the unprivileged `node` user and
@@ -200,7 +218,7 @@ license, workflow and provenance invariants.
 
 The gateway code, documentation, installation page and container definition are
 original work by Sythos and are available under the MIT License in
-[`LICENSE-MIT`](./LICENSE-MIT). BZFlag remains a separate upstream project under
+[`LEGAL-MIT.txt`](./LEGAL-MIT.txt). BZFlag remains a separate upstream project under
 its original LGPL-2.1/MPL-2.0 terms; the repository-level texts are available at
 [`../COPYING`](../COPYING), [`../COPYING.LGPL`](../COPYING.LGPL) and
 [`../COPYING.MPL`](../COPYING.MPL). Upstream notices and provenance are recorded

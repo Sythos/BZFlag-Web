@@ -1,4 +1,3 @@
-// @ts-nocheck
 /*
 Copyright (c) 2026 Sythos (https://www.sythos.net)
 
@@ -24,9 +23,12 @@ SOFTWARE.
 (() => {
   "use strict";
 
+  type TranslationPack = Record<string, string>;
+  type Catalog = Map<string, string>;
+
   const DEFAULT_LOCALE = "en";
   const LOCALE_STORAGE_KEY = "bzflag-web.locale.v1";
-  const SUPPORTED_LOCALES = [
+  const SUPPORTED_LOCALES: string[] = [
     "cs_CZ",
     "da",
     "de",
@@ -45,7 +47,7 @@ SOFTWARE.
     "xx"
   ];
 
-  const LOCALE_CATALOGS = {
+  const LOCALE_CATALOGS: Record<string, string> = {
     cs_CZ: "./assets/upstream/l10n/bzflag_cs_CZ.po",
     da: "./assets/upstream/l10n/bzflag_da.po",
     de: "./assets/upstream/l10n/bzflag_de.po",
@@ -64,7 +66,7 @@ SOFTWARE.
     xx: "./assets/upstream/l10n/bzflag_xx.po"
   };
 
-  const ENGLISH = {
+  const ENGLISH: TranslationPack = {
     language: "Language",
     clientReady: "Client ready",
     connection: "Connection",
@@ -149,7 +151,7 @@ SOFTWARE.
 
   /* The upstream BZFlag data/l10n locale list is kept intact. Missing strings
      intentionally fall back to English while each locale pack is expanded. */
-  const LOCALE_PACKS = {
+  const LOCALE_PACKS: Record<string, TranslationPack> = {
     cs_CZ: { language: "Čeština", connect: "Připojit", disconnect: "Odpojit", nickname: "Přezdívka", server: "Server", password: "Heslo", team: "Tým", motto: "Motto", score: "Skóre", kills: "Zabití", health: "Zdraví" },
     da: { language: "Dansk", connect: "Forbind", disconnect: "Afbryd", nickname: "Kaldenavn", server: "Server", password: "Adgangskode", team: "Hold", motto: "Motto", score: "Point", kills: "Drab", health: "Helbred" },
     de: { language: "Deutsch", connect: "Verbinden", disconnect: "Trennen", nickname: "Spitzname", server: "Server", password: "Passwort", team: "Team", motto: "Motto", score: "Punktzahl", kills: "Abschüsse", health: "Gesundheit" },
@@ -168,10 +170,10 @@ SOFTWARE.
     xx: { language: "Experimental", connect: "Connect", disconnect: "Disconnect", nickname: "Nickname", server: "Server", password: "Password", team: "Team", motto: "Motto" }
   };
 
-  const CATALOG_CACHE = new Map();
-  const CATALOG_LOADS = new Map();
+  const CATALOG_CACHE = new Map<string, Catalog>();
+  const CATALOG_LOADS = new Map<string, Promise<Catalog>>();
 
-  function unquotePo(value) {
+  function unquotePo(value: string): string {
     const text = String(value || "").trim();
     if (!text.startsWith('"') || !text.endsWith('"')) return "";
     try {
@@ -181,11 +183,11 @@ SOFTWARE.
     }
   }
 
-  function parsePo(source) {
-    const entries = new Map();
-    let msgid = null;
-    let msgstr = null;
-    let active = null;
+  function parsePo(source: string): Catalog {
+    const entries: Catalog = new Map();
+    let msgid: string | null = null;
+    let msgstr: string | null = null;
+    let active: "msgid" | "msgstr" | null = null;
     const commit = () => {
       if (msgid !== null && msgid !== "" && msgstr !== null && msgstr !== "") {
         entries.set(msgid, msgstr);
@@ -209,21 +211,22 @@ SOFTWARE.
         active = "msgstr";
       } else if (line.trim().startsWith('"') && active) {
         const value = unquotePo(line.trim());
-        if (active === "msgid") msgid += value;
-        else msgstr += value;
+        if (active === "msgid") msgid = `${msgid ?? ""}${value}`;
+        else msgstr = `${msgstr ?? ""}${value}`;
       }
     }
     commit();
     return entries;
   }
 
-  async function loadCatalog(locale) {
-    if (CATALOG_CACHE.has(locale)) return CATALOG_CACHE.get(locale);
-    if (CATALOG_LOADS.has(locale)) return CATALOG_LOADS.get(locale);
-    if (typeof fetch !== "function" || !LOCALE_CATALOGS[locale]) return new Map();
-    const load = fetch(LOCALE_CATALOGS[locale], { cache: "force-cache" })
-      .then((response) => response.ok ? response.text() : "")
-      .then((source) => {
+  async function loadCatalog(locale: string): Promise<Catalog> {
+    if (CATALOG_CACHE.has(locale)) return CATALOG_CACHE.get(locale) ?? new Map<string, string>();
+    if (CATALOG_LOADS.has(locale)) return CATALOG_LOADS.get(locale) ?? new Map<string, string>();
+    const catalogPath = LOCALE_CATALOGS[locale];
+    if (typeof fetch !== "function" || !catalogPath) return new Map();
+    const load: Promise<Catalog> = fetch(catalogPath, { cache: "force-cache" })
+      .then((response: Response) => response.ok ? response.text() : "")
+      .then((source: string) => {
         const entries = parsePo(source);
         CATALOG_CACHE.set(locale, entries);
         const pack = LOCALE_PACKS[locale] || (LOCALE_PACKS[locale] = {});
@@ -233,13 +236,13 @@ SOFTWARE.
         }
         return entries;
       })
-      .catch(() => new Map())
+      .catch(() => new Map<string, string>())
       .finally(() => CATALOG_LOADS.delete(locale));
     CATALOG_LOADS.set(locale, load);
     return load;
   }
 
-  function normaliseLocale(locale) {
+  function normaliseLocale(locale?: string | null): string {
     if (!locale) {
       return DEFAULT_LOCALE;
     }
@@ -255,7 +258,7 @@ SOFTWARE.
     return SUPPORTED_LOCALES.find((candidate) => candidate.toLowerCase().startsWith(`${prefix}_`) || candidate.toLowerCase() === prefix) || DEFAULT_LOCALE;
   }
 
-  function toLanguageTag(locale) {
+  function toLanguageTag(locale: string): string {
     return locale === DEFAULT_LOCALE ? "en" : locale.replaceAll("_", "-");
   }
 
@@ -269,12 +272,15 @@ SOFTWARE.
 
   let activeLocale = readLocale();
 
-  function translate(key, locale = activeLocale) {
+  function translate(key: string | null, locale = activeLocale): string {
+    if (!key) {
+      return "";
+    }
     const pack = LOCALE_PACKS[locale] || {};
     return pack[key] || ENGLISH[key] || key;
   }
 
-  function applyTranslations(root = document) {
+  function applyTranslations(root: ParentNode = document): void {
     root.querySelectorAll("[data-i18n]").forEach((element) => {
       const key = element.getAttribute("data-i18n");
       element.textContent = translate(key);
@@ -293,7 +299,7 @@ SOFTWARE.
     }));
   }
 
-  async function setLocale(locale) {
+  async function setLocale(locale: string): Promise<string> {
     activeLocale = normaliseLocale(locale);
     try {
       window.localStorage.setItem(LOCALE_STORAGE_KEY, activeLocale);
@@ -306,7 +312,7 @@ SOFTWARE.
     return activeLocale;
   }
 
-  function populateLocaleSelect(select) {
+  function populateLocaleSelect(select: HTMLSelectElement | null): void {
     if (!select) {
       return;
     }

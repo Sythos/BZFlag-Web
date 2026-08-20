@@ -60,13 +60,14 @@ has not been modified is kept unchanged.
 
 ==> Nested server license copy
 
-`server/LICENSE-MIT` intentionally repeats the complete MIT text from the
+`server/LEGAL-MIT.txt` intentionally repeats the complete MIT text from the
 repository-level [`LICENSE-MIT`](LICENSE-MIT).  It is required because
 `server/` is both a standalone distributable package and the Docker build
 context; the server archive and image must carry their applicable license even
-when extracted without the repository root.  The repeated file does not
-introduce a second or different license, and must remain textually consistent
-with the canonical root license.
+when extracted without the repository root.  Its neutral filename prevents
+GitHub from presenting a second repository license tab for the same MIT text.
+The repeated file does not introduce a second or different license, and must
+remain textually consistent with the canonical root license.
 
 ==> Third-party material
 

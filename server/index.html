@@ -58,13 +58,13 @@
 
       <h2>Requirements</h2>
       <ul>
-        <li>Node.js 26 or a newer supported stable release.</li>
+        <li>Node.js 26.7.0 or a newer supported stable release.</li>
         <li>Network access from this host to the selected official BZFlag server.</li>
         <li>A browser client served from an origin listed in <code>allowedOrigins</code>.</li>
       </ul>
 
       <h2>Install and configure</h2>
-      <p>After generating the random value, place it in <code>./config.json</code> as <code>sessionToken</code>. Replace the example official host with an approved BZFlag server before starting the gateway.</p>
+      <p>After generating the random value, place it in <code>./config.json</code> as <code>sessionToken</code>. Replace the example official host with an approved BZFlag server before starting the gateway. New browser clients carry this bearer in the WebSocket subprotocol; set <code>allowLegacyQueryToken</code> to <code>false</code> once older clients have been retired.</p>
       <pre><code>cd server
 cp ./config.example.json ./config.json
 node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
@@ -75,7 +75,7 @@ npm start</code></pre>
 
       <h2>Check the service</h2>
       <pre><code>curl http://127.0.0.1:8080/healthz</code></pre>
-      <p>The WebSocket endpoint is <code>/bridge?server=official-main&amp;token=YOUR_TOKEN</code>. The browser client should use <code>ws://</code> for local HTTP development and <code>wss://</code> when its page is served over HTTPS.</p>
+      <p>The WebSocket endpoint is <code>/bridge?server=official-main</code>. The browser offers <code>bzflag-web-v1</code> together with its encoded bearer as a subprotocol, and the gateway returns <code>Sec-WebSocket-Protocol: bzflag-web-v1</code>. The browser client should use <code>ws://</code> for local HTTP development and <code>wss://</code> when its page is served over HTTPS.</p>
 
       <h2>Docker</h2>
       <pre><code>docker build -t sythos/bzflag-web-gateway:local .
@@ -91,7 +91,7 @@ docker run --rm --name bzflag-web-gateway \
       <h2>Future custom-server support</h2>
       <p>Configuration entries already have a <code>kind</code> field and can carry per-server protocol metadata. Entries marked <code>custom</code> remain blocked while <code>allowCustomServers</code> is false. This default prevents a public gateway from becoming a general-purpose TCP/UDP proxy.</p>
     </article>
-    <footer>Sythos (<a href="https://www.sythos.net">www.sythos.net</a>) [BZFlag 2.4.31 / BZFS protocol 0221]</footer>
+    <footer>Sythos (<a href="https://www.sythos.net/" rel="noopener noreferrer">https://www.sythos.net/</a>) [BZFlag 2.4.31 / BZFS protocol 0221]</footer>
   </main>
 </body>
 </html>

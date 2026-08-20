@@ -18,7 +18,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-FROM node:26-alpine AS build
+FROM node:26.7.0-alpine AS build
 
 WORKDIR /build
 COPY package.json package-lock.json tsconfig.json gateway.ts gateway.test.ts ./
@@ -26,13 +26,13 @@ COPY fixtures ./fixtures
 RUN npm ci
 RUN npm run build
 
-FROM node:26-alpine
+FROM node:26.7.0-alpine
 
 ENV NODE_ENV=production \
     BZFLAG_WEB_CONFIG=./config.json
 
 WORKDIR /app
-COPY package.json LICENSE-MIT index.html ./
+COPY package.json LEGAL-MIT.txt index.html ./
 COPY --from=build /build/dist/gateway.js ./gateway.js
 
 USER node

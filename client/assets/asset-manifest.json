@@ -9,7 +9,7 @@
     "ref": "59b3ef44fa4538296be8b7f5eeafc2a4e57d0b74",
     "branch": "2.4"
   },
-  "policy": "Branding assets are MIT original work. Files under assets/upstream/ retain upstream notices and applicable license terms; fonts/DejaVu.License is the local font notice.",
+  "policy": "Branding assets are Sythos website imports with a local BZFlag tank overlay. Files under assets/upstream/ retain upstream notices and applicable license terms; fonts/DejaVu.License is the local font notice.",
   "entries": [
     {
       "path": "./assets/asset-manifest.json",
@@ -19,37 +19,37 @@
     {
       "path": "./assets/branding/android-chrome-192x192.png",
       "license": "MIT",
-      "source": "Sythos original project asset"
+      "source": "Sythos website branding import; locally modified with BZFlag tank overlay"
     },
     {
       "path": "./assets/branding/android-chrome-192x192.svg",
       "license": "MIT",
-      "source": "Sythos original project asset"
+      "source": "Sythos website branding import; locally modified with BZFlag tank overlay"
     },
     {
       "path": "./assets/branding/android-chrome-512x512.png",
       "license": "MIT",
-      "source": "Sythos original project asset"
+      "source": "Sythos website branding import; locally modified with BZFlag tank overlay"
     },
     {
       "path": "./assets/branding/android-chrome-512x512.svg",
       "license": "MIT",
-      "source": "Sythos original project asset"
+      "source": "Sythos website branding import; locally modified with BZFlag tank overlay"
     },
     {
       "path": "./assets/branding/apple-touch-icon.png",
       "license": "MIT",
-      "source": "Sythos original project asset"
+      "source": "Sythos website branding import; locally modified with BZFlag tank overlay"
     },
     {
       "path": "./assets/branding/apple-touch-icon.svg",
       "license": "MIT",
-      "source": "Sythos original project asset"
+      "source": "Sythos website branding import; locally modified with BZFlag tank overlay"
     },
     {
       "path": "./assets/branding/favicon.ico",
       "license": "MIT",
-      "source": "Sythos original project asset"
+      "source": "Sythos website branding import; locally modified with BZFlag tank overlay"
     },
     {
       "path": "./assets/branding/og-image.png",
@@ -64,7 +64,7 @@
     {
       "path": "./assets/favicon.svg",
       "license": "MIT",
-      "source": "Sythos original project asset"
+      "source": "Sythos website branding import; locally modified with BZFlag tank overlay"
     },
     {
       "path": "./assets/social-card.svg",

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /*
 Copyright (c) 2026 Sythos (https://www.sythos.net)
 
@@ -24,6 +23,47 @@ SOFTWARE.
 (() => {
   "use strict";
 
+  type Preferences = {
+    nickname: string;
+    serverId: string;
+    serverHost: string;
+    port: number;
+    gateway: string;
+    team: string;
+    motto: string;
+    audioEnabled: boolean;
+    preferWebGPU: boolean;
+    rememberPassword: boolean;
+    password?: string;
+  };
+
+  type Connection = Preferences & {
+    sessionToken: string;
+    upstreamRef: string;
+    bzfsVersion: string;
+    webVersion: string;
+    buildDate: string;
+    createdAt: string;
+  };
+
+  type AppElements = {
+    form: HTMLFormElement;
+    status: HTMLElement;
+    nickname: HTMLInputElement;
+    serverHost: HTMLInputElement;
+    serverId: HTMLInputElement;
+    serverPreset: HTMLSelectElement;
+    port: HTMLInputElement;
+    gateway: HTMLInputElement;
+    sessionToken: HTMLInputElement;
+    password: HTMLInputElement;
+    rememberPassword: HTMLInputElement;
+    team: HTMLSelectElement;
+    motto: HTMLInputElement;
+    audioEnabled: HTMLInputElement;
+    preferWebGPU: HTMLInputElement;
+  };
+
   const WEB_VERSION = "0.1.0";
   const BUILD_DATE = "2026-08-20";
   const BZFS_VERSION = "2.4.31";
@@ -31,10 +71,14 @@ SOFTWARE.
   const PREFERENCES_KEY = "bzflag-web.preferences.v1";
   const CONNECTION_KEY = "bzflag-web.connection.v1";
 
-  const elements = {};
+  const elements = {} as AppElements;
   let storageAvailable = true;
 
-  function getStorage(storage) {
+  function getStorage(storage: Storage | null): Storage | null {
+    if (!storage) {
+      storageAvailable = false;
+      return null;
+    }
     try {
       const marker = "__bzflag_web_storage_test__";
       storage.setItem(marker, marker);
@@ -46,19 +90,19 @@ SOFTWARE.
     }
   }
 
-  function readJson(storage, key, fallback = {}) {
+  function readJson<T extends Record<string, unknown>>(storage: Storage | null, key: string, fallback: T): T {
     if (!storage) {
       return fallback;
     }
     try {
-      const value = JSON.parse(storage.getItem(key) || "null");
-      return value && typeof value === "object" ? value : fallback;
+      const value: unknown = JSON.parse(storage.getItem(key) || "null");
+      return value && typeof value === "object" ? value as T : fallback;
     } catch {
       return fallback;
     }
   }
 
-  function writeJson(storage, key, value) {
+  function writeJson(storage: Storage | null, key: string, value: unknown): boolean {
     if (!storage) {
       return false;
     }
@@ -71,15 +115,15 @@ SOFTWARE.
     }
   }
 
-  function getElement(id) {
-    return document.getElementById(id);
+  function getElement<T extends HTMLElement>(id: string): T {
+    return document.getElementById(id) as T;
   }
 
-  function t(key) {
+  function t(key: string): string {
     return window.BZFlagWebI18n?.t(key) || key;
   }
 
-  function showStatus(message, kind = "") {
+  function showStatus(message: string, kind = ""): void {
     if (!elements.status) {
       return;
     }
@@ -97,8 +141,8 @@ SOFTWARE.
     footer.innerHTML = `[${BUILD_DATE} · web ${WEB_VERSION} · BZFS ${BZFS_VERSION} / ${shortRef}…] Sythos (<a href="https://www.sythos.net" rel="noopener noreferrer">https://www.sythos.net</a>)`;
   }
 
-  function loadPreferences(storage) {
-    const preferences = readJson(storage, PREFERENCES_KEY);
+  function loadPreferences(storage: Storage | null): void {
+    const preferences = readJson<Partial<Preferences>>(storage, PREFERENCES_KEY, {});
     if (preferences.nickname) elements.nickname.value = preferences.nickname;
     if (preferences.serverId) {
       elements.serverPreset.value = preferences.serverId;
@@ -118,8 +162,8 @@ SOFTWARE.
     }
   }
 
-  function collectPreferences() {
-    const values = {
+  function collectPreferences(): Preferences {
+    const values: Preferences = {
       nickname: elements.nickname.value.trim(),
       serverId: elements.serverId.value,
       serverHost: elements.serverHost.value.trim().toLowerCase(),
@@ -137,7 +181,7 @@ SOFTWARE.
     return values;
   }
 
-  function savePreferences(storage, values) {
+  function savePreferences(storage: Storage | null, values: Preferences): void {
     if (!storage) {
       return;
     }
@@ -148,9 +192,9 @@ SOFTWARE.
     writeJson(storage, PREFERENCES_KEY, preferences);
   }
 
-  function buildConnection(storage) {
+  function buildConnection(storage: Storage | null): Connection {
     const values = collectPreferences();
-    const session = {
+    const session: Connection = {
       nickname: values.nickname,
       serverId: values.serverId,
       serverHost: values.serverHost,
@@ -161,6 +205,7 @@ SOFTWARE.
       motto: values.motto,
       audioEnabled: values.audioEnabled,
       preferWebGPU: values.preferWebGPU,
+      rememberPassword: values.rememberPassword,
       upstreamRef: UPSTREAM_REF,
       bzfsVersion: BZFS_VERSION,
       webVersion: WEB_VERSION,
@@ -176,7 +221,7 @@ SOFTWARE.
     return session;
   }
 
-  function normaliseGatewayEndpoint(endpoint) {
+  function normaliseGatewayEndpoint(endpoint: string): string {
     const value = String(endpoint || "/bridge").trim();
     if (value.startsWith("/")) {
       return value;
@@ -202,7 +247,7 @@ SOFTWARE.
     }
   }
 
-  function handleSubmit(event, localStorage, sessionStorage) {
+  function handleSubmit(event: SubmitEvent, localStorage: Storage | null, sessionStorage: Storage | null): void {
     event.preventDefault();
     if (!elements.form.checkValidity()) {
       elements.form.reportValidity();
@@ -223,7 +268,10 @@ SOFTWARE.
       return;
     }
     showStatus(t("connectStatus"), "success");
-    elements.form.querySelector("button[type=submit]").disabled = true;
+    const submitButton = elements.form.querySelector<HTMLButtonElement>("button[type=submit]");
+    if (submitButton) {
+      submitButton.disabled = true;
+    }
     window.setTimeout(() => {
       window.location.assign("./web_game_run.html");
     }, 180);

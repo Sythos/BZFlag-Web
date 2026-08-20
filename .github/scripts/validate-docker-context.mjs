@@ -64,7 +64,7 @@ async function checkContextFile(source, lineNumber) {
 
 try {
   const dockerfile = await readFile(dockerfilePath, "utf8");
-  if (!/FROM\s+node:26-alpine\b/i.test(dockerfile)) failure("server/Dockerfile: Node 26 Alpine is required for the gateway build and runtime stages");
+  if (!/FROM\s+node:26\.7\.0-alpine\b/i.test(dockerfile)) failure("server/Dockerfile: Node 26.7.0 Alpine is required for the gateway build and runtime stages");
   if (/gateway\.mjs/i.test(dockerfile)) failure("server/Dockerfile: legacy gateway.mjs reference is not allowed");
   if (!/CMD\s+\[\s*["']node["']\s*,\s*["']gateway\.js["']\s*\]/i.test(dockerfile)) failure("server/Dockerfile: gateway.js must be the runtime entrypoint");
 
@@ -86,5 +86,5 @@ if (failures.length > 0) {
   console.error(failures.join("\n"));
   process.exitCode = 1;
 } else {
-  console.log("Docker context is relative, self-contained and aligned with the Node 26 gateway entrypoint.");
+  console.log("Docker context is relative, self-contained and aligned with the Node 26.7.0 gateway entrypoint.");
 }

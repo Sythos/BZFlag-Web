@@ -1,4 +1,3 @@
-// @ts-nocheck
 /*
  * SPDX-License-Identifier: MIT
  * Copyright (c) 2026 Sythos (https://www.sythos.net)
@@ -42,25 +41,147 @@ const DEFAULT_LIMITS = Object.freeze({
   messages: 128
 });
 
-function boundedInteger(value, minimum, maximum, fallback) {
+type Vector3 = [number, number, number];
+type StateData = {
+  [key: string]: unknown;
+  playerId?: number;
+  type?: number;
+  team?: number;
+  wins?: number;
+  losses?: number;
+  tks?: number;
+  nickname?: string;
+  motto?: string;
+  status?: number;
+  order?: number;
+  timestamp?: number;
+  position?: unknown;
+  velocity?: unknown;
+  azimuth?: number;
+  angularVelocity?: number;
+  small?: boolean;
+  jumpJetsScale?: number;
+  physicsDriver?: number;
+  userSpeed?: number;
+  userAngularVelocity?: number;
+  sounds?: number;
+  alive?: boolean;
+  shotId?: number;
+  timeSent?: number;
+  dt?: number;
+  flag?: string;
+  lifetime?: number;
+  flagIndex?: number;
+  flagType?: string;
+  endurance?: number;
+  owner?: number;
+  launchPosition?: unknown;
+  landingPosition?: unknown;
+  flightTime?: number;
+  flightEnd?: number;
+  initialVelocity?: number;
+  source?: number;
+  destination?: number;
+  message?: string;
+  flags?: StateData[];
+};
+
+type StateEvent = {
+  code: number;
+  valid?: boolean;
+  data?: StateData;
+  local?: boolean;
+};
+
+type StateLimits = {
+  players?: number;
+  shots?: number;
+  flags?: number;
+  messages?: number;
+};
+
+type PlayerState = {
+  playerId: number;
+  type: number;
+  team: number;
+  wins: number;
+  losses: number;
+  tks: number;
+  nickname: string;
+  motto: string;
+  status: number;
+  order: number;
+  timestamp: number;
+  position: Vector3;
+  velocity: Vector3;
+  azimuth: number;
+  angularVelocity: number;
+  small: boolean;
+  jumpJetsScale: number;
+  physicsDriver: number;
+  userSpeed: number;
+  userAngularVelocity: number;
+  sounds: number;
+  alive: boolean;
+};
+
+type ShotState = {
+  playerId: number;
+  shotId: number;
+  timeSent: number;
+  position: Vector3;
+  velocity: Vector3;
+  dt: number;
+  team: number;
+  flag: string;
+  lifetime: number;
+};
+
+type FlagState = {
+  flagIndex: number;
+  flagType: string;
+  status: number;
+  endurance: number;
+  owner: number;
+  position: Vector3;
+  launchPosition: Vector3;
+  landingPosition: Vector3;
+  flightTime: number;
+  flightEnd: number;
+  initialVelocity: number;
+};
+
+type MessageState = { source?: number; destination?: number; message: string };
+type ConnectionState = { phase: "connecting" | "accepted" | "rejected"; accepted: boolean; rejected: StateData | null };
+
+function boundedInteger(value: unknown, minimum: number, maximum: number, fallback: number): number {
   const number = Number(value);
   return Number.isFinite(number) ? Math.min(maximum, Math.max(minimum, Math.trunc(number))) : fallback;
 }
 
-function finite(value, fallback = 0) {
+function finite(value: unknown, fallback = 0): number {
   return Number.isFinite(Number(value)) ? Number(value) : fallback;
 }
 
-function copyVector(value) {
-  const source = Array.isArray(value) || ArrayBuffer.isView(value) ? value : [0, 0, 0];
+function vectorComponent(value: unknown, index: number): unknown {
+  if (Array.isArray(value)) {
+    return value[index];
+  }
+  if (ArrayBuffer.isView(value)) {
+    return (value as unknown as ArrayLike<unknown>)[index];
+  }
+  return 0;
+}
+
+function copyVector(value: unknown): Vector3 {
   return [
-    Math.min(1_000_000, Math.max(-1_000_000, finite(source[0]))),
-    Math.min(1_000_000, Math.max(-1_000_000, finite(source[1]))),
-    Math.min(1_000_000, Math.max(-1_000_000, finite(source[2]))),
+    Math.min(1_000_000, Math.max(-1_000_000, finite(vectorComponent(value, 0)))),
+    Math.min(1_000_000, Math.max(-1_000_000, finite(vectorComponent(value, 1)))),
+    Math.min(1_000_000, Math.max(-1_000_000, finite(vectorComponent(value, 2)))),
   ];
 }
 
-function copyPlayer(data) {
+function copyPlayer(data: StateData): PlayerState {
   return {
     playerId: boundedInteger(data.playerId, 0, 255, 0),
     type: boundedInteger(data.type, 0, 0xffff, 0),
@@ -87,7 +208,7 @@ function copyPlayer(data) {
   };
 }
 
-function copyShot(data) {
+function copyShot(data: StateData): ShotState {
   return {
     playerId: boundedInteger(data.playerId, 0, 255, 0),
     shotId: boundedInteger(data.shotId, 0, 0xffff, 0),
@@ -101,7 +222,7 @@ function copyShot(data) {
   };
 }
 
-function copyFlag(data) {
+function copyFlag(data: StateData): FlagState {
   return {
     flagIndex: boundedInteger(data.flagIndex, 0, 0xffff, 0),
     flagType: String(data.flagType || "").slice(0, 2),
@@ -117,12 +238,22 @@ function copyFlag(data) {
   };
 }
 
-function clone(value) {
-  return JSON.parse(JSON.stringify(value));
+function clone<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
 }
 
 export class WorldState {
-  constructor(options = {}) {
+  private readonly limits: Required<StateLimits>;
+  private readonly players: Map<number, PlayerState>;
+  private readonly shots: Map<string, ShotState>;
+  private readonly flags: Map<number, FlagState>;
+  private readonly messages: MessageState[];
+  private localPlayerId: number | null;
+  private connection: ConnectionState;
+  private revision: number;
+  private lastPacketAt: number;
+
+  constructor(options: StateLimits = {}) {
     this.limits = {
       players: boundedInteger(options.players, 1, DEFAULT_LIMITS.players, DEFAULT_LIMITS.players),
       shots: boundedInteger(options.shots, 1, DEFAULT_LIMITS.shots, DEFAULT_LIMITS.shots),
@@ -144,25 +275,27 @@ export class WorldState {
     this.lastPacketAt = Date.now();
   }
 
-  #ensurePlayer(playerId) {
-    if (this.players.has(playerId)) return this.players.get(playerId);
+  #ensurePlayer(playerId: number): PlayerState | null {
+    if (this.players.has(playerId)) return this.players.get(playerId) ?? null;
     if (this.players.size >= this.limits.players) return null;
     const player = copyPlayer({ playerId });
     this.players.set(playerId, player);
     return player;
   }
 
-  #boundedMapInsert(map, key, value, limit) {
+  #boundedMapInsert<K, V>(map: Map<K, V>, key: K, value: V, limit: number): void {
     if (!map.has(key) && map.size >= limit) {
       const oldest = map.keys().next().value;
-      map.delete(oldest);
+      if (oldest !== undefined) {
+        map.delete(oldest);
+      }
     }
     map.set(key, value);
   }
 
-  apply(event) {
+  apply(event: StateEvent): { applied: boolean; reason?: string; code?: number; revision: number; localPlayerId: number | null } {
     if (!event || event.valid === false || !Number.isInteger(event.code)) {
-      return { applied: false, reason: "invalid-event", revision: this.revision };
+      return { applied: false, reason: "invalid-event", revision: this.revision, localPlayerId: this.localPlayerId };
     }
     const data = event.data;
     let applied = true;
@@ -174,7 +307,7 @@ export class WorldState {
         this.connection = { phase: "rejected", accepted: false, rejected: data ? clone(data) : null };
         break;
       case MSG_ADD_PLAYER: {
-        if (!data) { applied = false; break; }
+        if (!data || typeof data.playerId !== "number") { applied = false; break; }
         if (!this.players.has(data.playerId) && this.players.size >= this.limits.players) { applied = false; break; }
         const player = copyPlayer(data);
         this.#boundedMapInsert(this.players, player.playerId, player, this.limits.players);
@@ -182,19 +315,19 @@ export class WorldState {
         break;
       }
       case MSG_REMOVE_PLAYER:
-        if (!data || !this.players.delete(data.playerId)) applied = false;
+        if (!data || typeof data.playerId !== "number" || !this.players.delete(data.playerId)) applied = false;
         if (data && data.playerId === this.localPlayerId) this.localPlayerId = null;
         break;
       case MSG_PLAYER_UPDATE:
       case MSG_PLAYER_UPDATE_SMALL: {
-        if (!data) { applied = false; break; }
+        if (!data || typeof data.playerId !== "number") { applied = false; break; }
         const player = this.#ensurePlayer(data.playerId);
         if (!player) { applied = false; break; }
         Object.assign(player, copyPlayer({ ...player, ...data }));
         break;
       }
       case MSG_ALIVE: {
-        if (!data) { applied = false; break; }
+        if (!data || typeof data.playerId !== "number") { applied = false; break; }
         const player = this.#ensurePlayer(data.playerId);
         if (!player) { applied = false; break; }
         Object.assign(player, {
@@ -235,7 +368,16 @@ export class WorldState {
     return { applied, code: event.code, revision: this.revision, localPlayerId: this.localPlayerId };
   }
 
-  snapshot() {
+  snapshot(): {
+    revision: number;
+    lastPacketAt: number;
+    connection: ConnectionState;
+    localPlayerId: number | null;
+    players: PlayerState[];
+    shots: ShotState[];
+    flags: FlagState[];
+    messages: MessageState[];
+  } {
     return clone({
       revision: this.revision,
       lastPacketAt: this.lastPacketAt,
@@ -249,11 +391,13 @@ export class WorldState {
   }
 }
 
-export function createWorldState(options = {}) {
+export function createWorldState(options: StateLimits = {}): WorldState {
   return new WorldState(options);
 }
 
 export const WORLD_STATE_LIMITS = Object.freeze({ ...DEFAULT_LIMITS });
 
 const api = { WorldState, createWorldState, WORLD_STATE_LIMITS };
-if (typeof globalThis !== "undefined") globalThis.BZFlagWebState = api;
+if (typeof globalThis !== "undefined") {
+  (globalThis as typeof globalThis & { BZFlagWebState?: typeof api }).BZFlagWebState = api;
+}

@@ -24,7 +24,7 @@ SOFTWARE.
 -->
 
 [![HTML5](https://img.shields.io/badge/HTML5-E34F26?logo=html5&logoColor=white)](https://html.spec.whatwg.org/)
-[![Node.js](https://img.shields.io/badge/Node.js-latest%20stable-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-26.7.0-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![Issues](https://img.shields.io/github/issues/Sythos/BZFlag-Web)](https://github.com/Sythos/BZFlag-Web/issues)
 [![Last commit](https://img.shields.io/github/last-commit/Sythos/BZFlag-Web)](https://github.com/Sythos/BZFlag-Web/commits/main/)
 [![Downloads](https://img.shields.io/github/downloads/Sythos/BZFlag-Web/total)](https://github.com/Sythos/BZFlag-Web/releases)
@@ -123,7 +123,7 @@ The production configuration is allowlist-first:
 => health and diagnostic endpoints expose only non-sensitive metadata.
 
 Apache or Nginx normally terminates HTTPS and forwards the WebSocket upgrade to
-Node.js. The instructions in `server/README.md` describe the required upgrade
+Node.js 26.7.0. The instructions in `server/README.md` describe the required upgrade
 headers, restricted bind address and health check. HTTPS/WSS is required for a
 deployed PWA and for WebGPU on a public origin; `localhost` is suitable for local
 development.
@@ -167,7 +167,7 @@ separate from rendering and network code.
 ==> Installation at a glance
 
 Use the latest stable Node.js supported by the package metadata; CI and the
-container build currently use Node.js 26. Install and build the gateway from
+container build currently use Node.js 26.7.0. Install and build the gateway from
 `server/` by following [`server/README.md`](server/README.md), then serve
 `client/` as static files from the HTTPS origin listed in the gateway's
 `allowedOrigins` configuration. The client deployment examples are in

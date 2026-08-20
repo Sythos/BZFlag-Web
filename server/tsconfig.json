@@ -23,7 +23,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 {
-  "_license": "MIT - Copyright (c) 2026 Sythos (https://www.sythos.net). See LICENSE-MIT.",
+  "_license": "MIT - Copyright (c) 2026 Sythos (https://www.sythos.net). See LEGAL-MIT.txt.",
   "compilerOptions": {
     "target": "ES2022",
     "module": "NodeNext",

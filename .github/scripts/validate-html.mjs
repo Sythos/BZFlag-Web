@@ -69,6 +69,18 @@ for (const [path, requiredText] of files) {
       failures.push(`${path}: missing required project marker ${token}`);
     }
   }
+
+  const footer = source.match(/<footer\b[\s\S]*?<\/footer>/i)?.[0] || "";
+  if (path === "client/index.html" || path === "server/index.html") {
+    if (!footer.includes('href="https://www.sythos.net/"') || !footer.includes("https://www.sythos.net/")) {
+      failures.push(`${path}: the bottom-right credit must link to https://www.sythos.net/`);
+    }
+  }
+
+  const operationalMarkup = source.replace(/<footer\b[\s\S]*?<\/footer>/gi, "");
+  for (const match of operationalMarkup.matchAll(/(?:href|src|content|data-brand-source)\s*=\s*["']https:\/\/www\.sythos\.net[^"']*["']/gi)) {
+    failures.push(`${path}: operational branding references must be relative: ${match[0]}`);
+  }
 }
 
 if (checked === 0) {

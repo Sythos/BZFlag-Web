@@ -81,7 +81,8 @@ for (const [name, source] of workflows) {
 
 const ci = workflows.get("ci.yml") || "";
 requireMarker(ci, ".github/workflows/ci.yml", "npm ci --prefix");
-requireMarker(ci, ".github/workflows/ci.yml", "node-version: 26.x");
+requireMarker(ci, ".github/workflows/ci.yml", "node-version: 26.7.0");
+requireMarker(ci, ".github/workflows/ci.yml", "node .github/scripts/check-runtime-versions.mjs");
 requireMarker(ci, ".github/workflows/ci.yml", "npm run typecheck --prefix server");
 requireMarker(ci, ".github/workflows/ci.yml", "npm run typecheck --prefix client");
 requireMarker(ci, ".github/workflows/ci.yml", "npm test --prefix server");
@@ -104,9 +105,11 @@ if (/push:\s*\$\{\{\s*github\.event_name\s*!=\s*'pull_request'\s*\}\}/.test(cont
 }
 
 const release = workflows.get("release.yml") || "";
-requireMarker(workflows.get("compliance.yml") || "", ".github/workflows/compliance.yml", "node-version: 26.x");
+requireMarker(workflows.get("compliance.yml") || "", ".github/workflows/compliance.yml", "node-version: 26.7.0");
+requireMarker(workflows.get("compliance.yml") || "", ".github/workflows/compliance.yml", "node .github/scripts/check-runtime-versions.mjs");
 requireMarker(workflows.get("compliance.yml") || "", ".github/workflows/compliance.yml", "node .github/scripts/check-readmes.mjs");
-requireMarker(release, ".github/workflows/release.yml", "node-version: 26.x");
+requireMarker(release, ".github/workflows/release.yml", "node-version: 26.7.0");
+requireMarker(release, ".github/workflows/release.yml", "node .github/scripts/check-runtime-versions.mjs");
 requireMarker(release, ".github/workflows/release.yml", "needs:\n      - validate-ref\n      - verify");
 requireMarker(release, ".github/workflows/release.yml", "context: server");
 requireMarker(release, ".github/workflows/release.yml", "file: server/Dockerfile");

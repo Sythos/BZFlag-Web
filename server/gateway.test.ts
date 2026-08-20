@@ -35,6 +35,7 @@ import {
   createGateway,
   decodeBridgeMessage,
   encodeBridgeMessage,
+  isPublicTargetAddress,
   loadConfig,
   normalizeConfig,
 } from './gateway.js';
@@ -49,6 +50,12 @@ interface UpgradeResult {
   connection: Socket;
   response: string;
   remainder: Buffer;
+}
+
+interface UpgradeOptions {
+  serverId?: string;
+  token?: string;
+  subprotocol?: boolean;
 }
 
 function listenTcp(server: TcpServer): Promise<number> {
@@ -142,7 +149,13 @@ function waitForSocketClose(socket: Socket, timeoutMs = 2000): Promise<void> {
   });
 }
 
-function awaitableSocket(port: number): Promise<UpgradeResult> {
+function awaitableSocket(port: number, options: UpgradeOptions = {}): Promise<UpgradeResult> {
+  const serverId = options.serverId || 'official-test';
+  const token = options.token || 'test-token';
+  const queryToken = options.subprotocol ? '' : `&token=${encodeURIComponent(token)}`;
+  const subprotocol = options.subprotocol
+    ? ['Sec-WebSocket-Protocol: bzflag-web-v1, bzflag-token.' + Buffer.from(token, 'utf8').toString('base64url')]
+    : [];
   return new Promise<UpgradeResult>((resolve, reject) => {
     const connection = createConnection({ host: '127.0.0.1', port });
     let response = Buffer.alloc(0);
@@ -157,13 +170,14 @@ function awaitableSocket(port: number): Promise<UpgradeResult> {
     connection.once('error', reject);
     connection.on('connect', () => {
       connection.write([
-        'GET /bridge?server=official-test&token=test-token HTTP/1.1',
+        `GET /bridge?server=${encodeURIComponent(serverId)}${queryToken} HTTP/1.1`,
         'Host: 127.0.0.1',
         'Upgrade: websocket',
         'Connection: Upgrade',
         'Sec-WebSocket-Version: 13',
         `Sec-WebSocket-Key: ${randomBytes(16).toString('base64')}`,
         'Origin: http://localhost:3000',
+        ...subprotocol,
         '',
         '',
       ].join('\r\n'));
@@ -195,6 +209,25 @@ test('trustProxy requires an exact IP peer allowlist', () => {
   assert.deepEqual(config.trustedProxyPeers, ['127.0.0.1']);
 });
 
+test('target policy rejects private and metadata address space unless explicitly enabled for local fixtures', () => {
+  assert.equal(isPublicTargetAddress('127.0.0.1'), false);
+  assert.equal(isPublicTargetAddress('10.0.0.12'), false);
+  assert.equal(isPublicTargetAddress('169.254.169.254'), false);
+  assert.equal(isPublicTargetAddress('192.168.1.10'), false);
+  assert.equal(isPublicTargetAddress('::1'), false);
+  assert.equal(isPublicTargetAddress('fd00:ec2::254'), false);
+  assert.equal(isPublicTargetAddress('203.0.113.20'), false);
+  assert.equal(isPublicTargetAddress('8.8.8.8'), true);
+  assert.throws(() => normalizeConfig({
+    servers: [{ id: 'private', kind: 'official', host: '127.0.0.1', port: 5154 }],
+  }), /publicly routable/);
+  const localFixture = normalizeConfig({
+    allowPrivateAddresses: true,
+    servers: [{ id: 'private', kind: 'official', host: '127.0.0.1', port: 5154 }],
+  });
+  assert.equal(localFixture.allowPrivateAddresses, true);
+});
+
 test('configuration paths stay relative and the default target policy is official-only', () => {
   const config = loadConfig({
     path: './config.example.json',
@@ -206,6 +239,32 @@ test('configuration paths stay relative and the default target policy is officia
   assert.equal(config.configPath, './config.example.json');
   assert.equal(config.allowCustomServers, false);
   assert.equal(config.servers[0]?.kind, 'official');
+});
+
+test('gateway authenticates bearer tokens through the WebSocket subprotocol and can disable query compatibility', async (t: TestContext) => {
+  const target = createTcpServer();
+  const targetPort = await listenTcp(target);
+  t.after(() => target.close());
+  const gateway = createGateway({
+    host: '127.0.0.1',
+    port: 0,
+    sessionToken: 'test-token',
+    allowLegacyQueryToken: false,
+    allowPrivateAddresses: true,
+    allowedOrigins: ['http://localhost:3000'],
+    servers: [{ id: 'official-test', kind: 'official', host: '127.0.0.1', port: targetPort }],
+  });
+  const address = await gateway.start();
+  t.after(() => gateway.stop());
+
+  const subprotocol = await awaitableSocket(address.port, { subprotocol: true });
+  assert.match(subprotocol.response, /^HTTP\/1\.1 101 Switching Protocols/);
+  assert.match(subprotocol.response, /Sec-WebSocket-Protocol: bzflag-web-v1\r?\n/i);
+  subprotocol.connection.end(maskedWebSocketFrame(Buffer.alloc(0), 8));
+
+  const legacy = await awaitableSocket(address.port);
+  assert.match(legacy.response, /^HTTP\/1\.1 403 Forbidden/);
+  legacy.connection.destroy();
 });
 
 test('gateway exposes health and forwards TCP and UDP traffic only to an allowlisted target', async (t: TestContext) => {
@@ -224,6 +283,7 @@ test('gateway exposes health and forwards TCP and UDP traffic only to an allowli
     host: '127.0.0.1',
     port: 0,
     sessionToken: 'test-token',
+    allowPrivateAddresses: true,
     allowedOrigins: ['http://localhost:3000'],
     servers: [{ id: 'official-test', kind: 'official', host: '127.0.0.1', port: tcpPort, udpPort }],
     limits: { maxFrameBytes: 1024, maxBufferedBytes: 8192, maxMessagesPerSecond: 20, maxBytesPerSecond: 8192, idleTimeoutMs: 5000 },
@@ -260,6 +320,7 @@ test('gateway relays BZFlag TCP streams and intact UDP datagrams through the bri
     host: '127.0.0.1',
     port: 0,
     sessionToken: 'test-token',
+    allowPrivateAddresses: true,
     allowedOrigins: ['http://localhost:3000'],
     servers: [{
       id: 'official-loopback',
@@ -327,6 +388,7 @@ test('gateway closes a session before TCP write buffering can exceed its limit',
     host: '127.0.0.1',
     port: 0,
     sessionToken: 'test-token',
+    allowPrivateAddresses: true,
     allowedOrigins: ['http://localhost:3000'],
     servers: [{ id: 'official-test', host: '127.0.0.1', port: targetPort }],
     limits: { maxFrameBytes: 1024, maxBufferedBytes: 64, idleTimeoutMs: 5000 },
@@ -348,6 +410,7 @@ test('gateway rejects UDP datagrams larger than the upstream 2.4.31 limit', asyn
     host: '127.0.0.1',
     port: 0,
     sessionToken: 'test-token',
+    allowPrivateAddresses: true,
     allowedOrigins: ['http://localhost:3000'],
     servers: [{ id: 'official-test', host: '127.0.0.1', port: targetPort }],
     limits: { maxFrameBytes: 1024, maxBufferedBytes: 8192, idleTimeoutMs: 5000 },
@@ -369,6 +432,7 @@ test('gateway rejects a WebSocket upgrade with an untrusted Origin', async (t: T
     host: '127.0.0.1',
     port: 0,
     sessionToken: 'test-token',
+    allowPrivateAddresses: true,
     allowedOrigins: ['http://localhost:3000'],
     servers: [{ id: 'official-test', host: '127.0.0.1', port: targetPort }],
   });
@@ -406,6 +470,7 @@ test('gateway closes an incomplete frame after the parser deadline and bounds co
     host: '127.0.0.1',
     port: 0,
     sessionToken: 'test-token',
+    allowPrivateAddresses: true,
     allowedOrigins: ['http://localhost:3000'],
     servers: [{ id: 'official-test', host: '127.0.0.1', port: targetPort }],
     limits: {
@@ -439,6 +504,7 @@ test('gateway bounds complete frame and control-frame rates', async (t: TestCont
     host: '127.0.0.1',
     port: 0,
     sessionToken: 'test-token',
+    allowPrivateAddresses: true,
     allowedOrigins: ['http://localhost:3000'],
     servers: [{ id: 'official-test', host: '127.0.0.1', port: targetPort }],
     limits: {

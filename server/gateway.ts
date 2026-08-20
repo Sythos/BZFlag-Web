@@ -22,6 +22,7 @@
 
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { createSocket } from 'node:dgram';
+import { lookup } from 'node:dns/promises';
 import { existsSync, readFileSync } from 'node:fs';
 import { createServer as createHttpServer } from 'node:http';
 import { createServer as createHttpsServer } from 'node:https';
@@ -39,6 +40,8 @@ export const BRIDGE_MAGIC = Buffer.from('BZWB', 'ascii');
 export const BRIDGE_VERSION = 1;
 export const CHANNEL_TCP = 0;
 export const CHANNEL_UDP = 1;
+export const WEBSOCKET_SUBPROTOCOL = 'bzflag-web-v1';
+const TOKEN_SUBPROTOCOL_PREFIX = 'bzflag-token.';
 const WEBSOCKET_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 const DEFAULT_MAX_FRAME_BYTES = 1024 * 1024;
 const DEFAULT_MAX_BUFFERED_BYTES = 4 * 1024 * 1024;
@@ -93,6 +96,17 @@ interface GatewayConfig {
   healthPath: string;
   allowedOrigins: string[];
   allowCustomServers: boolean;
+  /**
+   * Local integration-test escape hatch. Production configurations must keep
+   * this false so a DNS answer cannot turn the bridge into an internal proxy.
+   */
+  allowPrivateAddresses: boolean;
+  /**
+   * Temporary compatibility switch for pre-subprotocol browser clients.
+   * Production deployments should disable query-string bearer tokens after
+   * all clients have moved to the WebSocket subprotocol transport.
+   */
+  allowLegacyQueryToken: boolean;
   protocolVersion: string;
   bzflagVersion: string;
   servers: ServerTarget[];
@@ -153,6 +167,8 @@ export const DEFAULT_CONFIG: Omit<GatewayConfig, 'sessionToken' | 'tls' | 'confi
   healthPath: '/healthz',
   allowedOrigins: ['http://localhost', 'http://127.0.0.1'],
   allowCustomServers: false,
+  allowPrivateAddresses: false,
+  allowLegacyQueryToken: true,
   protocolVersion: DEFAULT_BZFLAG_PROTOCOL,
   bzflagVersion: DEFAULT_BZFLAG_VERSION,
   servers: [],
@@ -245,7 +261,149 @@ function normalizeProxyPeers(peers: unknown): string[] {
   });
 }
 
-function normalizeServer(server: any, index: number): ServerTarget {
+const IPV4_BLOCKED_RANGES: ReadonlyArray<readonly [number, number]> = [
+  [0x00000000, 0x00ffffff], // unspecified and current network
+  [0x0a000000, 0x0affffff], // RFC 1918
+  [0x64400000, 0x647fffff], // RFC 6598 shared address space
+  [0x7f000000, 0x7fffffff], // loopback
+  [0xa9fe0000, 0xa9feffff], // link-local
+  [0xc0000000, 0xc00000ff], // IETF protocol assignments
+  [0xc0000200, 0xc00002ff], // TEST-NET-1
+  [0xc0586300, 0xc05863ff], // 6to4 anycast
+  [0xc0a80000, 0xc0a8ffff], // RFC 1918
+  [0xc6120000, 0xc613ffff], // benchmarking
+  [0xc6336400, 0xc63364ff], // TEST-NET-2
+  [0xcb007100, 0xcb0071ff], // TEST-NET-3
+  [0xe0000000, 0xffffffff], // multicast and reserved
+];
+
+function parseIpv4(address: string): number | null {
+  const parts = address.split('.');
+  if (parts.length !== 4 || parts.some((part) => !/^\d{1,3}$/.test(part))) return null;
+  const octets = parts.map(Number);
+  if (octets.some((octet) => octet > 255)) return null;
+  return (((octets[0] * 256 + octets[1]) * 256 + octets[2]) * 256) + octets[3];
+}
+
+function parseIpv6(address: string): number[] | null {
+  if (address.includes('%')) return null;
+  let value = address.toLowerCase();
+  if (value.includes('.')) {
+    const separator = value.lastIndexOf(':');
+    const embedded = separator >= 0 ? parseIpv4(value.slice(separator + 1)) : null;
+    if (embedded === null) return null;
+    const high = Math.floor(embedded / 0x10000).toString(16);
+    const low = (embedded % 0x10000).toString(16);
+    value = `${value.slice(0, separator + 1)}${high}:${low}`;
+  }
+  const compressionIndex = value.indexOf('::');
+  if (compressionIndex >= 0 && value.indexOf('::', compressionIndex + 2) >= 0) return null;
+  const leftText = compressionIndex >= 0 ? value.slice(0, compressionIndex) : value;
+  const rightText = compressionIndex >= 0 ? value.slice(compressionIndex + 2) : '';
+  const parseGroups = (text: string): number[] => {
+    if (!text) return [];
+    const groups = text.split(':');
+    if (groups.some((group) => !/^[0-9a-f]{1,4}$/.test(group))) return [];
+    return groups.map((group) => Number.parseInt(group, 16));
+  };
+  const left = parseGroups(leftText);
+  const right = parseGroups(rightText);
+  if (left.length + right.length > 8) return null;
+  if (compressionIndex < 0 && left.length !== 8) return null;
+  const groups = compressionIndex >= 0
+    ? [...left, ...Array.from({ length: 8 - left.length - right.length }, () => 0), ...right]
+    : left;
+  return groups.length === 8 ? groups : null;
+}
+
+function isIpv4Blocked(address: string): boolean {
+  const value = parseIpv4(address);
+  return value === null || IPV4_BLOCKED_RANGES.some(([start, end]) => value >= start && value <= end);
+}
+
+function isIpv6Blocked(address: string): boolean {
+  const groups = parseIpv6(address);
+  if (!groups) return true;
+  if (groups.every((group) => group === 0)) return true;
+  if (groups.slice(0, 7).every((group) => group === 0) && groups[7] === 1) return true;
+  const first = groups[0];
+  if ((first & 0xfe00) === 0xfc00) return true; // RFC 4193 unique local
+  if ((first & 0xffc0) === 0xfe80) return true; // RFC 4291 link-local
+  if ((first & 0xff00) === 0xff00) return true; // multicast
+  if (first === 0x2001 && groups[1] === 0x0db8) return true; // documentation
+  // IPv4-mapped, IPv4-compatible and NAT64 forms must not bypass the IPv4
+  // policy by being represented as IPv6.
+  const isMapped = groups.slice(0, 5).every((group) => group === 0) && groups[5] === 0xffff;
+  const isCompatible = groups.slice(0, 6).every((group) => group === 0);
+  const isNat64 = groups[0] === 0x0064 && groups[1] === 0xff9b;
+  if (isMapped || isCompatible || isNat64) {
+    const embedded = ((groups[6] * 0x10000) + groups[7]);
+    const ipv4 = `${embedded >>> 24}.${(embedded >>> 16) & 0xff}.${(embedded >>> 8) & 0xff}.${embedded & 0xff}`;
+    return isIpv4Blocked(ipv4);
+  }
+  return false;
+}
+
+/** Return true only for an address that is suitable for an official target. */
+export function isPublicTargetAddress(address: string): boolean {
+  const family = isIP(address);
+  if (family === 4) return !isIpv4Blocked(address);
+  if (family === 6) return !isIpv6Blocked(address);
+  return false;
+}
+
+function isBlockedTargetHostname(host: string): boolean {
+  const normalized = host.toLowerCase().replace(/\.$/, '');
+  return normalized === 'localhost'
+    || normalized.endsWith('.localhost')
+    || normalized === 'ip6-localhost'
+    || normalized === 'metadata'
+    || normalized === 'metadata.google.internal'
+    || normalized.endsWith('.metadata.google.internal')
+    || normalized === 'instance-data.ec2.internal'
+    || normalized.endsWith('.instance-data.ec2.internal');
+}
+
+interface ResolvedTargetAddress {
+  address: string;
+  family: 4 | 6;
+}
+
+async function resolveTargetAddress(host: string, allowPrivateAddresses: boolean): Promise<ResolvedTargetAddress> {
+  const literalFamily = isIP(host);
+  if (literalFamily !== 0) {
+    if (!allowPrivateAddresses && !isPublicTargetAddress(host)) {
+      throw new Error('Target address is not publicly routable');
+    }
+    return { address: host, family: literalFamily as 4 | 6 };
+  }
+  if (isBlockedTargetHostname(host) && !allowPrivateAddresses) {
+    throw new Error('Target hostname is reserved for local or metadata services');
+  }
+  let records;
+  try {
+    records = await lookup(host, { all: true, verbatim: true });
+  } catch (error: any) {
+    throw new Error(`Target hostname resolution failed: ${error.code || 'DNS_ERROR'}`);
+  }
+  if (!Array.isArray(records) || records.length === 0) throw new Error('Target hostname has no address records');
+  const addresses = records.map((record) => ({
+    address: String(record.address),
+    family: Number(record.family) as 4 | 6,
+  }));
+  if (addresses.some((record) => (record.family !== 4 && record.family !== 6) || isIP(record.address) !== record.family)) {
+    throw new Error('Target hostname returned an invalid address');
+  }
+  // Reject the complete DNS answer if any record is private. This is stricter
+  // than selecting a public record and prevents a rebinding/load-balancer
+  // answer from using the bridge as a path into the local network.
+  if (!allowPrivateAddresses && addresses.some((record) => !isPublicTargetAddress(record.address))) {
+    throw new Error('Target hostname resolved to a non-public address');
+  }
+  return addresses[0];
+}
+
+function normalizeServer(server: any, index: number, allowPrivateAddresses = false): ServerTarget {
   if (!server || typeof server !== 'object') {
     throw new Error(`servers[${index}] must be an object`);
   }
@@ -254,8 +412,11 @@ function normalizeServer(server: any, index: number): ServerTarget {
     throw new Error(`servers[${index}].id must contain only letters, numbers, dot, underscore, or dash`);
   }
   const host = String(server.host ?? '').trim();
-  if (!host || host.length > 253 || /[\s/]/.test(host)) {
+  if (!host || host.length > 253 || /[\s/%]/.test(host)) {
     throw new Error(`servers[${index}].host must be a DNS name or IP address`);
+  }
+  if (isIP(host) !== 0 && !allowPrivateAddresses && !isPublicTargetAddress(host)) {
+    throw new Error(`servers[${index}].host must be publicly routable`);
   }
   const port = asPositiveInteger(server.port, 5154, `servers[${index}].port`);
   const udpPort = asPositiveInteger(server.udpPort, port, `servers[${index}].udpPort`);
@@ -304,6 +465,8 @@ export function normalizeConfig(input: Record<string, any> = {}): GatewayConfig 
   }
   config.allowedOrigins = normalizeOrigins(config.allowedOrigins);
   config.allowCustomServers = config.allowCustomServers === true;
+  config.allowPrivateAddresses = config.allowPrivateAddresses === true;
+  config.allowLegacyQueryToken = config.allowLegacyQueryToken !== false;
   config.trustProxy = config.trustProxy === true;
   config.trustedProxyPeers = normalizeProxyPeers(config.trustedProxyPeers);
   if (config.trustProxy && config.trustedProxyPeers.length === 0) {
@@ -314,7 +477,7 @@ export function normalizeConfig(input: Record<string, any> = {}): GatewayConfig 
   if (!Array.isArray(config.servers)) {
     throw new Error('servers must be an array');
   }
-  config.servers = config.servers.map(normalizeServer);
+  config.servers = config.servers.map((server, index) => normalizeServer(server, index, config.allowPrivateAddresses));
   const ids = new Set();
   for (const server of config.servers) {
     if (ids.has(server.id)) {
@@ -367,6 +530,8 @@ export function loadConfig({ path = process.env.BZFLAG_WEB_CONFIG || 'config.jso
     input.allowedOrigins = env.BZFLAG_WEB_ALLOWED_ORIGINS.split(',').map((origin) => origin.trim()).filter(Boolean);
   }
   if (env.BZFLAG_WEB_ALLOW_CUSTOM_SERVERS === 'true') input.allowCustomServers = true;
+  if (env.BZFLAG_WEB_ALLOW_LEGACY_QUERY_TOKEN === 'false') input.allowLegacyQueryToken = false;
+  if (env.BZFLAG_WEB_ALLOW_LEGACY_QUERY_TOKEN === 'true') input.allowLegacyQueryToken = true;
   if (env.BZFLAG_WEB_TRUST_PROXY === 'true') input.trustProxy = true;
   const config = normalizeConfig(input);
   config.configPath = path && existsSync(path) ? path : null;
@@ -379,6 +544,40 @@ function tokenMatches(expected: string | undefined, received: string): boolean {
   const receivedBuffer = Buffer.from(received, 'utf8');
   if (expectedBuffer.length !== receivedBuffer.length) return false;
   return timingSafeEqual(expectedBuffer, receivedBuffer);
+}
+
+function parseWebSocketProtocols(value: unknown): string[] {
+  const values = Array.isArray(value) ? value : [value];
+  return values.flatMap((entry) => typeof entry === 'string'
+    ? entry.split(',').map((protocol) => protocol.trim()).filter(Boolean)
+    : []);
+}
+
+function decodeTokenSubprotocol(value: string): string | null {
+  if (!/^[A-Za-z0-9_-]{1,704}$/.test(value)) return null;
+  let decoded: Buffer;
+  try {
+    decoded = Buffer.from(value, 'base64url');
+  } catch {
+    return null;
+  }
+  if (decoded.length === 0 || decoded.length > 512) return null;
+  if (decoded.toString('base64url') !== value) return null;
+  try {
+    const text = new TextDecoder('utf-8', { fatal: true }).decode(decoded);
+    return text.length > 0 && text.length <= 512 ? text : null;
+  } catch {
+    return null;
+  }
+}
+
+function subprotocolTokenMatches(protocols: string[], expected: string | undefined): boolean {
+  const tokenProtocols = protocols.filter((protocol) => protocol.startsWith(TOKEN_SUBPROTOCOL_PREFIX));
+  if (tokenProtocols.length !== 1) return false;
+  const value = tokenProtocols[0].slice(TOKEN_SUBPROTOCOL_PREFIX.length);
+  // Accept a raw token as well as the canonical base64url form during the
+  // migration. The browser client always emits the canonical encoded form.
+  return tokenMatches(expected, value) || tokenMatches(expected, decodeTokenSubprotocol(value) || '');
 }
 
 export function isOriginAllowed(origin: unknown, allowedOrigins: string[]): boolean {
@@ -778,6 +977,9 @@ class GatewaySession {
   private readonly clientIp: string;
   private tcp: Socket | null;
   private udp: DatagramSocket | null;
+  private connecting: boolean;
+  private pendingMessages: BridgeMessage[];
+  private pendingBytes: number;
   private closed: boolean;
   private lastActivity: number;
   private readonly inboundLimiter: RateLimiter;
@@ -790,6 +992,9 @@ class GatewaySession {
     this.clientIp = clientIp;
     this.tcp = null;
     this.udp = null;
+    this.connecting = true;
+    this.pendingMessages = [];
+    this.pendingBytes = 0;
     this.closed = false;
     this.lastActivity = Date.now();
     this.inboundLimiter = new RateLimiter(
@@ -804,12 +1009,17 @@ class GatewaySession {
     this.ws.onClose = () => this.close('websocket closed');
     gateway.sessions.add(this);
     gateway.incrementIp(clientIp);
-    this.#connect();
+    void this.#connect();
   }
 
-  #connect(): void {
+  async #connect(): Promise<void> {
     try {
-      this.tcp = createConnection({ host: this.target.host, port: this.target.port });
+      // Resolve once and connect to the selected literal address. Passing the
+      // literal to both transports pins the DNS answer for this session and
+      // avoids a second lookup that could be changed by DNS rebinding.
+      const endpoint = await resolveTargetAddress(this.target.host, this.gateway.config.allowPrivateAddresses);
+      if (this.closed) return;
+      this.tcp = createConnection({ host: endpoint.address, port: this.target.port, family: endpoint.family });
       this.tcp.setNoDelay(true);
       this.tcp.setTimeout(this.gateway.config.limits.idleTimeoutMs, () => this.close('TCP idle timeout'));
       this.tcp.on('connect', () => {
@@ -821,11 +1031,16 @@ class GatewaySession {
         if (!this.closed) this.close('TCP connection closed');
       });
 
-      this.udp = createSocket(this.target.host.includes(':') ? 'udp6' : 'udp4');
+      this.udp = createSocket(endpoint.family === 6 ? 'udp6' : 'udp4');
       this.udp.on('message', (data: Buffer, _remote: RemoteInfo) => this.#sendTargetData(CHANNEL_UDP, data));
       this.udp.on('error', (error: NodeJS.ErrnoException) => this.#fail(`UDP connection error: ${error.code || 'error'}`));
-      this.udp.connect(this.target.udpPort, this.target.host, () => {
+      this.udp.connect(this.target.udpPort, endpoint.address, () => {
         this.lastActivity = Date.now();
+        this.connecting = false;
+        const pending = this.pendingMessages;
+        this.pendingMessages = [];
+        this.pendingBytes = 0;
+        for (const message of pending) this.#forwardMessage(message);
       });
     } catch (error: any) {
       this.#fail(`Target connection setup failed: ${error.code || 'error'}`);
@@ -850,6 +1065,19 @@ class GatewaySession {
       this.#fail('UDP datagram exceeds the protocol limit', 1009);
       return;
     }
+    if (this.connecting) {
+      if (this.pendingBytes + message.payload.length > this.gateway.config.limits.maxBufferedBytes) {
+        return this.#fail('Target connection setup buffer is full', 1013);
+      }
+      this.pendingMessages.push(message);
+      this.pendingBytes += message.payload.length;
+      return;
+    }
+    this.#forwardMessage(message);
+  }
+
+  #forwardMessage(message: BridgeMessage): void {
+    if (this.closed) return;
     if (message.channel === CHANNEL_TCP) {
       if (!this.tcp || this.tcp.destroyed || !this.tcp.writable) return this.#fail('TCP connection is unavailable');
       if (this.tcp.writableLength + message.payload.length > this.gateway.config.limits.maxBufferedBytes) {
@@ -901,6 +1129,9 @@ class GatewaySession {
   close(reason = 'closed'): void {
     if (this.closed) return;
     this.closed = true;
+    this.connecting = false;
+    this.pendingMessages = [];
+    this.pendingBytes = 0;
     if (this.tcp && !this.tcp.destroyed) this.tcp.destroy();
     if (this.udp) {
       try {
@@ -1086,7 +1317,13 @@ export function createGateway(inputConfig: Record<string, any> = {}): Gateway {
       return rejectUpgrade(socket, 400, 'Unsupported WebSocket handshake');
     }
     if (!isOriginAllowed(headers.origin, config.allowedOrigins)) return rejectUpgrade(socket, 403, 'Origin is not allowed');
-    if (!tokenMatches(config.sessionToken, url.searchParams.get('token') || '')) return rejectUpgrade(socket, 403, 'Invalid session token');
+    const protocols = parseWebSocketProtocols(headers['sec-websocket-protocol']);
+    const hasBridgeProtocol = protocols.includes(WEBSOCKET_SUBPROTOCOL);
+    const hasTokenProtocol = protocols.some((protocol) => protocol.startsWith(TOKEN_SUBPROTOCOL_PREFIX));
+    const subprotocolAuthenticated = hasBridgeProtocol && subprotocolTokenMatches(protocols, config.sessionToken);
+    const legacyAuthenticated = !hasTokenProtocol && config.allowLegacyQueryToken
+      && tokenMatches(config.sessionToken, url.searchParams.get('token') || '');
+    if (!subprotocolAuthenticated && !legacyAuthenticated) return rejectUpgrade(socket, 403, 'Invalid session token');
     const targetId = url.searchParams.get('server') || '';
     if (!/^[A-Za-z0-9._-]{1,64}$/.test(targetId)) return rejectUpgrade(socket, 400, 'A valid server id is required');
     const target = gateway.findServer(targetId);
@@ -1102,6 +1339,7 @@ export function createGateway(inputConfig: Record<string, any> = {}): Gateway {
       'Upgrade: websocket',
       'Connection: Upgrade',
       `Sec-WebSocket-Accept: ${accept}`,
+      ...(hasBridgeProtocol ? [`Sec-WebSocket-Protocol: ${WEBSOCKET_SUBPROTOCOL}`] : []),
       '',
       '',
     ].join('\r\n'));

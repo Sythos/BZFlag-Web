@@ -138,8 +138,11 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 26.x
+          node-version: 26.7.0
           check-latest: true
+
+      - name: Verify runtime and locked dependency versions
+        run: node .github/scripts/check-runtime-versions.mjs
 
       - name: Fetch base branch for the ancestry gate
         run: git fetch --no-tags origin "+$RELEASE_BASE_BRANCH:refs/remotes/origin/$RELEASE_BASE_BRANCH"
@@ -245,7 +248,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 26.x
+          node-version: 26.7.0
           check-latest: true
 
       - name: Build release directories
@@ -293,9 +296,12 @@ jobs:
             cp "${required_licenses[@]}" "$directory/"
           done
 
-          (cd release && zip -qr "bzflag-web-client-${version}.zip" "bzflag-web-client-${version}")
-          (cd release && tar -czf "bzflag-web-server-${version}.tar.gz" "bzflag-web-server-${version}")
-          (cd release && zip -qr "bzflag-web-server-${version}.zip" "bzflag-web-server-${version}")
+          source_date_epoch="$(git show -s --format=%ct "${RELEASE_TAG}^{commit}")"
+          export SOURCE_DATE_EPOCH="$source_date_epoch"
+          find "release/bzflag-web-client-${version}" "release/bzflag-web-server-${version}" -exec touch -h -d "@${SOURCE_DATE_EPOCH}" {} +
+          (cd release && zip -X -q "bzflag-web-client-${version}.zip" "bzflag-web-client-${version}")
+          (cd release && tar --sort=name --mtime="@${SOURCE_DATE_EPOCH}" --owner=0 --group=0 --numeric-owner -czf "bzflag-web-server-${version}.tar.gz" "bzflag-web-server-${version}")
+          (cd release && zip -X -q "bzflag-web-server-${version}.zip" "bzflag-web-server-${version}")
 
       - name: Build Docker package
         shell: bash
@@ -366,6 +372,7 @@ jobs:
       - name: Publish GitHub release after package attestations
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_COMMIT: ${{ needs.validate-ref.outputs.release_commit }}
         shell: bash
         run: |
           set -euo pipefail
@@ -387,6 +394,15 @@ jobs:
             fi
           done
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            tag_object="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" --jq '.object.sha')"
+            tag_type="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" --jq '.object.type')"
+            if [[ "$tag_type" == "tag" ]]; then
+              tag_object="$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${tag_object}" --jq '.object.sha')"
+            fi
+            if [[ "$tag_object" != "$RELEASE_COMMIT" ]]; then
+              echo "Existing GitHub release tag does not point to the validated commit." >&2
+              exit 1
+            fi
             gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
           else
             gh release create "$RELEASE_TAG" "${assets[@]}" \

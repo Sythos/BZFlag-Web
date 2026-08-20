@@ -53,7 +53,7 @@ const cachesApi = {
   }
 };
 const self = {
-  location: { origin: "https://example.test" },
+  location: { origin: "https://example.test", href: "https://example.test/" },
   clients: { claim: async () => {} },
   skipWaiting: async () => {},
   addEventListener(type, listener) {
@@ -98,7 +98,7 @@ for (const entry of assetManifest.entries) {
   assert(cached.has(entry.path), `offline install omitted ${entry.path}`);
 }
 assert(cached.has("./index.html"), "offline install omitted the connection shell");
-for (const script of ["./dist/renderer.js", "./dist/state.js", "./dist/service-worker.js"]) {
+for (const script of ["./dist/renderer.js", "./dist/state.js", "./dist/world.js", "./dist/service-worker.js"]) {
   assert(cached.has(script), `offline install omitted ${script}`);
 }
 assert([...cached].every((path) => path.startsWith("./")), "offline cache contains a non-relative path");
