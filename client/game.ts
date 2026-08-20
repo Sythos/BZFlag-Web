@@ -45,6 +45,23 @@ SOFTWARE.
     Escape: "open-menu"
   };
 
+  function createInputState() {
+    return {
+      // A player id is learned from the server's MsgAddPlayer packet. The
+      // physics renderer must later provide a fresh snapshot before movement
+      // packets are emitted; sending guessed positions would be unsafe.
+      playerId: null,
+      physicsReady: false,
+      order: 0,
+      status: window.BZFlagWebProtocol?.PLAYER_STATUS?.dead || 0,
+      timestamp: 0,
+      position: [0, 0, 0],
+      velocity: [0, 0, 0],
+      azimuth: 0,
+      angularVelocity: 0
+    };
+  }
+
   const get = (id) => document.getElementById(id);
   const t = (key) => window.BZFlagWebI18n?.t(key) || key;
 
@@ -255,12 +272,20 @@ SOFTWARE.
     return socket;
   }
 
-  function handleGatewayMessage(data) {
+  function handleGatewayMessage(data, session = {}) {
     try {
       const bridge = decodeBridgeMessage(data);
       const protocol = window.BZFlagWebProtocol;
       if (protocol?.consume) {
-        protocol.consume(bridge.channel, bridge.payload);
+        const stream = bridge.channel === CHANNEL_TCP ? session.tcpStream : session.udpStream;
+        const packets = stream ? stream.push(bridge.payload) : [bridge.payload];
+        for (const packet of packets) {
+          const result = protocol.consume(bridge.channel, packet, { nickname: session.connection?.nickname });
+          if (result?.local && result.player && session.inputState) {
+            session.inputState.playerId = result.player.playerId;
+            appendEvent(`Assigned BZFlag player ID ${result.player.playerId}.`);
+          }
+        }
       } else {
         appendEvent(`Received ${bridge.payload.byteLength} bytes on ${bridge.channel === CHANNEL_UDP ? "UDP" : "TCP"} bridge channel.`);
       }
@@ -271,12 +296,13 @@ SOFTWARE.
     }
   }
 
-  function bindKeyboard(socket, audio) {
+  function bindKeyboard(socket, audio, getInputState = () => ({})) {
     const pressed = new Set();
     const sendCommand = (command, phase, key) => {
       const protocol = window.BZFlagWebProtocol;
       if (socket?.readyState === WebSocket.OPEN && protocol?.encodeInput) {
-        const payload = protocol.encodeInput(command, phase, key);
+        const state = getInputState(command, phase, key) || {};
+        const payload = protocol.encodeInput(command, phase, key, state);
         if (payload) {
           socket.send(encodeBridgeMessage(CHANNEL_TCP, payload));
         }
@@ -379,8 +405,25 @@ SOFTWARE.
     const renderer = await window.BZFlagWebRenderer.createRenderer(canvas, { preferWebGPU: connection.preferWebGPU !== false });
     updateRendererStatus(renderer.mode);
     bindControls(audio, renderer);
-    const socket = connectGateway(connection, handleGatewayMessage);
-    bindKeyboard(socket, audio);
+    const inputState = createInputState();
+    const protocolSession = {
+      connection,
+      inputState,
+      tcpStream: new window.BZFlagWebProtocol.PacketStream(),
+      udpStream: new window.BZFlagWebProtocol.PacketStream()
+    };
+    const socket = connectGateway(connection, (data) => handleGatewayMessage(data, protocolSession));
+    bindKeyboard(socket, audio, (command, phase) => {
+      // Until the renderer supplies a physics snapshot, this remains null for
+      // movement and shot commands. Local key handling still works and is ready
+      // for the authoritative state adapter without changing the wire format.
+      if (inputState.physicsReady && inputState.playerId !== null) {
+        inputState.order = Math.min(0x7fffffff, inputState.order + 1);
+        inputState.timestamp = (typeof performance !== "undefined" && performance.now ? performance.now() : Date.now()) / 1000;
+        return inputState;
+      }
+      return { command, phase };
+    });
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("./service-worker.js", { scope: "./" }).catch(() => {
         /* A static HTTP deployment may not provide a secure context. */
@@ -402,6 +445,7 @@ SOFTWARE.
     CHANNEL_UDP,
     COMMAND_MAP,
     CONNECTION_KEY,
+    createInputState,
     AudioEngine,
     decodeBridgeMessage,
     encodeBridgeMessage,

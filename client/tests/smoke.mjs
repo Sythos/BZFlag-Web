@@ -44,6 +44,7 @@ const requiredFiles = [
   "dist/renderer.js",
   "dist/service-worker.js",
   "service-worker.js",
+  "tests/protocol.test.mjs",
   "manifest.webmanifest",
   "assets/favicon.svg",
   "assets/social-card.svg",
@@ -100,5 +101,7 @@ if (manifest.license !== "MIT" || manifest.scope !== "./") {
 if (!index.includes('id="gateway-endpoint"') || !index.includes('id="gateway-endpoint" name="gateway" type="text"')) {
   throw new Error("gateway endpoint must accept relative bridge paths");
 }
+
+await import("./protocol.test.mjs");
 
 console.log(`Client smoke checks passed (${requiredFiles.length} required files).`);
