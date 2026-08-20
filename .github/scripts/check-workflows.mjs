@@ -86,6 +86,13 @@ for (const [name, source] of workflows) {
   }
 }
 
+const setupNodeNode24Marker = "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020";
+for (const [name, source] of workflows) {
+  if (source.includes("actions/setup-node@")) {
+    requireMarker(source, join(workflowDirectory, name), setupNodeNode24Marker);
+  }
+}
+
 const ci = workflows.get("ci.yml") || "";
 requireMarker(ci, ".github/workflows/ci.yml", "npm ci --prefix");
 requireMarker(ci, ".github/workflows/ci.yml", "node-version: 26.7.0");
