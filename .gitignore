@@ -142,6 +142,7 @@ Thumbs.db
 /server/node_modules/
 /client/node_modules/
 /client/dist/
+/client/service-worker.js
 /server/dist/
 /coverage/
 /reports/

@@ -89,14 +89,9 @@ jobs:
         run: |
           set -euo pipefail
           for directory in server client; do
-            if [[ ! -f "${directory}/package.json" ]]; then
-              continue
-            fi
-            if [[ -f "${directory}/package-lock.json" ]]; then
-              npm ci --prefix "${directory}" --ignore-scripts
-            else
-              npm install --prefix "${directory}" --ignore-scripts
-            fi
+            test -f "${directory}/package.json"
+            test -f "${directory}/package-lock.json"
+            npm ci --prefix "${directory}" --ignore-scripts
             npm audit --prefix "${directory}" --omit=dev --audit-level=high
-            npm pack --prefix "${directory}" --dry-run
+            (cd "${directory}" && npm pack --dry-run)
           done

@@ -36,8 +36,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  javascript:
-    name: Node.js server and client tests
+  typescript:
+    name: TypeScript server and client tests
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
@@ -58,43 +58,28 @@ jobs:
         run: |
           set -euo pipefail
           for directory in server client; do
-            if [[ ! -f "${directory}/package.json" ]]; then
-              echo "${directory}/package.json is not present; skipping dependency install."
-              continue
-            fi
-            if [[ -f "${directory}/package-lock.json" ]]; then
-              npm ci --prefix "${directory}" --ignore-scripts
-            else
-              npm install --prefix "${directory}" --ignore-scripts
-            fi
+            test -f "${directory}/package.json"
+            test -f "${directory}/package-lock.json"
+            npm ci --prefix "${directory}" --ignore-scripts
           done
 
       - name: Run server checks
         shell: bash
         run: |
           set -euo pipefail
-          if [[ -f server/package.json ]]; then
-            npm run lint --if-present --prefix server
-            npm run typecheck --if-present --prefix server
-            npm test --if-present --prefix server
-            npm run build --if-present --prefix server
-          else
-            echo "No server package found; gateway checks will run once server/ is added."
-          fi
+          npm run lint --prefix server
+          npm run typecheck --prefix server
+          npm run build --prefix server
+          npm test --prefix server
 
       - name: Run client checks
         shell: bash
         run: |
           set -euo pipefail
-          if [[ -f client/package.json ]]; then
-            npm run lint --if-present --prefix client
-            npm run typecheck --if-present --prefix client
-            npm test --if-present --prefix client
-            npm run build --if-present --prefix client
-            npm run test:e2e --if-present --prefix client
-          else
-            echo "No client package found; browser checks will run once client/ is added."
-          fi
+          npm run lint --prefix client
+          npm run typecheck --prefix client
+          npm run build --prefix client
+          npm test --prefix client
 
       - name: Validate static HTML entry points
         run: node .github/scripts/validate-html.mjs

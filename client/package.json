@@ -13,7 +13,7 @@
     "ref": "59b3ef44fa4538296be8b7f5eeafc2a4e57d0b74"
   },
   "scripts": {
-    "clean": "node -e \"import('node:fs/promises').then(({rm}) => rm('dist', {recursive:true, force:true}))\"",
+    "clean": "node -e \"import('node:fs/promises').then(({rm}) => Promise.all([rm('dist', {recursive:true, force:true}), rm('service-worker.js', {force:true})]))\"",
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "check": "tsc --noEmit",

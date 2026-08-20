@@ -166,6 +166,7 @@ const requiredReleaseFiles = [
   "client/service-worker.ts",
   "client/package.json",
   "client/package-lock.json",
+  "client/service-worker.js",
   "client/dist/app.js",
   "client/dist/game.js",
   "client/dist/i18n.js",

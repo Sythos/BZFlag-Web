@@ -6,6 +6,7 @@
   "type": "module",
   "license": "MIT",
   "author": "Sythos (https://www.sythos.net)",
+  "x-license-header": "SPDX-License-Identifier: MIT; Copyright (c) 2026 Sythos (https://www.sythos.net). The complete MIT text is in LICENSE-MIT.",
   "engines": {
     "node": ">=22"
   },
@@ -13,6 +14,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/gateway.js",
     "lint": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
     "check": "tsc --noEmit -p tsconfig.json",
     "test": "npm run build && node dist/gateway.test.js"
   },
