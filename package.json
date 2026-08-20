@@ -1,6 +1,6 @@
 {
   "name": "bzflag-web-client",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "Browser BZFlag client and Node.js gateway for official BZFS servers.",
   "type": "module",

@@ -29,7 +29,7 @@ independent game window (`web_game_run.html`), WebGPU rendering with a WebGL2
 fallback, binary BZFlag bridge framing, a PWA service worker, local upstream
 media and the sixteen locale catalogues from the pinned BZFlag 2.4.31 baseline.
 
-Version `0.1.1` is an MVP/prototype, not a complete playable BZFlag client. It
+Version `0.1.2` is an MVP/prototype, not a complete playable BZFlag client. It
 currently wires the connection form, session handoff, initial keyboard and audio
 controls, renderer selection, bounded bridge framing and a deterministic scene
 pipeline for validated world geometry, tanks, shots and flags. Complete world

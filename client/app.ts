@@ -64,7 +64,7 @@ SOFTWARE.
     preferWebGPU: HTMLInputElement;
   };
 
-  const WEB_VERSION = "0.1.1";
+  const WEB_VERSION = "0.1.2";
   const BUILD_DATE = "2026-08-20";
   const BZFS_VERSION = "2.4.31";
   const UPSTREAM_REF = "59b3ef44fa4538296be8b7f5eeafc2a4e57d0b74";

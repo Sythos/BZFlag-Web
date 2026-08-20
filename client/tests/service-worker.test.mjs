@@ -43,7 +43,7 @@ const cachesApi = {
     return cache;
   },
   async keys() {
-    return ["old-cache", "bzflag-web-client-v0.1.1"];
+    return ["old-cache", "bzflag-web-client-v0.1.2"];
   },
   async delete() {
     return true;
