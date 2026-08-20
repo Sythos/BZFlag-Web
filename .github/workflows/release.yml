@@ -138,7 +138,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 24.x
+          node-version: 26.x
           check-latest: true
 
       - name: Fetch base branch for the ancestry gate
@@ -196,6 +196,9 @@ jobs:
       - name: Validate HTML entry points
         run: node .github/scripts/validate-html.mjs
 
+      - name: Validate workflow structure and release invariants
+        run: node .github/scripts/check-workflows.mjs
+
   package:
     name: Build release packages
     needs:
@@ -218,7 +221,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 24.x
+          node-version: 26.x
           check-latest: true
 
       - name: Build release directories
@@ -291,7 +294,7 @@ jobs:
         run: |
           set -euo pipefail
           node .github/scripts/release-metadata.mjs --release-tag "$RELEASE_TAG" --release-dir release
-          find release -maxdepth 1 -type f -print0 | sort -z | xargs -0 sha256sum > release/SHA256SUMS.txt
+          find release -maxdepth 1 -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > release/SHA256SUMS.txt
 
       - name: Upload release bundle for publication
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
