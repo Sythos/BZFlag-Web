@@ -18,14 +18,14 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-FROM node:22-alpine AS build
+FROM node:26-alpine AS build
 
 WORKDIR /build
 COPY package.json package-lock.json tsconfig.json gateway.ts gateway.test.ts ./
 RUN npm ci
 RUN npm run build
 
-FROM node:22-alpine
+FROM node:26-alpine
 
 ENV NODE_ENV=production \
     BZFLAG_WEB_CONFIG=/app/config.json
