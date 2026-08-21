@@ -56,7 +56,10 @@ operator-provided session token, validates the selected allowlisted target,
 performs a bounded native BZFS identity preflight, and then forwards bounded
 TCP or UDP bridge envelopes. It rejects arbitrary host and port values supplied
 by a browser. The default policy also rejects custom entries and private target
-addresses.
+addresses. The preflight is a generic protocol sanity and identity check: it
+helps prevent an accidental HTTP, SSH or unrelated TCP service from being used
+as a target, but it is not authentication, authorization, DDoS protection or a
+complete abuse-prevention system.
 
 ==> 2. Supported installation models
 
@@ -72,10 +75,23 @@ Choose one of these models before editing configuration:
    HTTPS and WSS, serves the static client, and forwards `/bridge` to the
    private Node.js listener. This is the recommended public layout.
 
-Do not run two gateway processes on the same host and port. Do not expose the
-native development listener directly to the Internet. Do not publish a Docker
-port without configuring an allowlist, a non-default token, TLS at the proxy,
-and a firewall policy.
+Do not run two gateway processes on the same host and port. For a native or
+Docker gateway that must be reachable directly from outside the host, a high,
+atypical external port is strongly recommended. It reduces accidental clashes
+and opportunistic scanning noise, but it is not a security boundary: a port
+number does not replace authentication, TLS, an allowlist or a firewall. The
+usual public recommendation remains an HTTPS/WSS reverse proxy on its normal
+TLS port, with Node.js kept on a private listener behind that proxy.
+
+If no reverse proxy, tunnel or port-forwarding rule makes the gateway reachable,
+remote browsers cannot use it. A public BZFS server does not make a private
+loopback-only gateway reachable by itself. Conversely, direct exposure can be
+used for a controlled test when the operator deliberately publishes the
+chosen atypical port, configures the allowlist and token, applies TLS/WSS where
+applicable, and restricts the firewall to the intended clients. The gateway's
+BZFS preflight provides only generic protection against obvious wrong-target
+misconfiguration; it does not make an exposed port safe against malicious
+clients, traffic floods or a malicious target.
 
 ==> 3. Prerequisites
 
@@ -420,8 +436,8 @@ Before asking a player to test, complete every item below:
    unless a documented isolated exception is being tested.
 7. The target host resolves to an approved address and its TCP and UDP ports
    are reachable from the gateway host.
-8. The gateway health endpoint is reachable only through the intended local
-   proxy or private network, not from an unrestricted public interface.
+8. The gateway health endpoint is reachable through the intended proxy or
+   protected port. Do not publish it more broadly than necessary.
 9. The proxy has TLS/WSS, WebSocket upgrade support, request limits and logs
    that do not contain tokens or player passwords.
 10. The client uses the correct relative or WSS bridge endpoint and the browser
@@ -431,7 +447,8 @@ Before asking a player to test, complete every item below:
 12. Firewall and monitoring rules have an owner and a rollback procedure.
 
 If any item fails, stop at the private test stage. A successful `/healthz` call
-alone does not justify making the gateway public.
+only proves that the gateway process is ready; it does not prove that the
+public route, target BZFS server or abuse controls are correctly deployed.
 
 ==> 15. Troubleshooting
 
@@ -448,8 +465,10 @@ alone does not justify making the gateway public.
    never enable custom mode just to bypass a configuration error.
 => `Target is not a BZFS server` means the preflight did not receive the
    expected `BZFS` greeting and protocol version. Check the hostname, TCP port,
-   TLS/proxy assumptions and server identity. Do not use the gateway to relay
-   an unverified service.
+   TLS/proxy assumptions and server identity. This check blocks obvious wrong
+   targets but is only generic protection; it does not authenticate a server or
+   protect an exposed gateway from hostile clients. Do not relay an unverified
+   service.
 => `Target address is not allowed` means DNS resolved to a loopback, private,
    link-local, multicast, metadata or other reserved range. Keep the rejection
    for public deployment and correct the allowlist or DNS instead.
@@ -483,10 +502,13 @@ controlled client connection before reopening the service to players.
 ==> 17. Security and licence reminders
 
 This gateway is a transport boundary, not a complete security boundary. Keep
-the allowlist short, reject custom and private targets, use TLS/WSS, limit
-network exposure, rotate secrets, patch Node.js and dependencies, and run the
-repository checks before every public deployment. Only contact BZFlag servers
-you are authorised to contact and comply with their rules.
+the allowlist short, reject custom and private targets, use TLS/WSS, prefer an
+atypical direct port when direct exposure is unavoidable, limit network
+exposure, rotate secrets, patch Node.js and dependencies, and run the
+repository checks before every public deployment. The BZFS preflight is only a
+generic wrong-service check and must not be described as complete protection
+against abuse, flooding or hostile peers. Only contact BZFlag servers you are
+authorised to contact and comply with their rules.
 
 Original gateway documentation and code are MIT-licensed by Sythos. Any
 upstream BZFlag-derived material remains under its original LGPL-2.1/MPL-2.0
