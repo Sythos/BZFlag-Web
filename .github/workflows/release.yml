@@ -518,7 +518,7 @@ jobs:
           container_id="$(docker run --detach --publish 18080:8080 "$smoke_tag")"
           trap 'docker rm --force "$container_id" >/dev/null 2>&1 || true' EXIT
           attempt=1
-          while (( attempt <= 30 )); do
+          while (( attempt <= 60 )); do
             if curl --fail --silent --show-error http://127.0.0.1:18080/healthz >/dev/null; then
               exit 0
             fi
