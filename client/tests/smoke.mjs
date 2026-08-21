@@ -70,7 +70,8 @@ const requiredFiles = [
   "assets/upstream/l10n/bzflag_it.po",
   "assets/upstream/l10n/bzflag_en_US_l33t.po",
   "tests/i18n.test.mjs",
-  "tests/service-worker.test.mjs"
+  "tests/service-worker.test.mjs",
+  "tests/app.test.mjs"
 ];
 
 for (const relativePath of requiredFiles) {
@@ -90,6 +91,7 @@ async function assertLocalReference(reference, sourceFile) {
 
 const index = await readFile(join(root, "index.html"), "utf8");
 const game = await readFile(join(root, "web_game_run.html"), "utf8");
+const appSource = await readFile(join(root, "app.ts"), "utf8");
 const gameSource = await readFile(join(root, "game.ts"), "utf8");
 const serviceWorker = await readFile(join(root, "service-worker.ts"), "utf8");
 const manifest = JSON.parse(await readFile(join(root, "manifest.webmanifest"), "utf8"));
@@ -150,8 +152,11 @@ for (const file of await collectFiles(join(root, "assets"), "assets")) {
   }
 }
 
-for (const marker of ["connect-form", "remember-password", "session-token", "F11", "BZFS 2.4.31", "Sythos"]) {
+for (const marker of ["connect-form", "remember-password", "session-token", "install-button", "F11", "BZFS 2.4.31", "Sythos", "./assets/branding/og-image.png", "./assets/branding/social-card.png"]) {
   if (!index.includes(marker)) throw new Error(`index.html is missing ${marker}`);
+}
+for (const marker of ["beforeinstallprompt", "getWindowStorage", "clearSavedPassword", "service-worker.js"]) {
+  if (!appSource.includes(marker)) throw new Error(`app.ts is missing ${marker}`);
 }
 for (const marker of ["game-canvas", "chat-composer", "chat-target", "chat-message", "protocol.js", "WebGPU", "WebGL2", "Sythos", "BZFS 2.4.31"]) {
   if (!game.includes(marker)) throw new Error(`web_game_run.html is missing ${marker}`);
@@ -170,5 +175,6 @@ await import("./state.test.mjs");
 await import("./world.test.mjs");
 await import("./i18n.test.mjs");
 await import("./service-worker.test.mjs");
+await import("./app.test.mjs");
 
 console.log(`Client smoke checks passed (${requiredFiles.length} required files).`);

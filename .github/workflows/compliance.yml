@@ -53,6 +53,11 @@ jobs:
           node-version: 26.7.0
           check-latest: true
 
+      - name: Check latest stable toolchain and documented pins
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node .github/scripts/check-toolchain-versions.mjs --check-latest
+
       - name: Check licenses, attribution and headers
         run: node .github/scripts/check-compliance.mjs
 
@@ -98,6 +103,11 @@ jobs:
 
       - name: Verify runtime and locked dependency versions
         run: node .github/scripts/check-runtime-versions.mjs
+
+      - name: Check latest stable toolchain and documented pins
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node .github/scripts/check-toolchain-versions.mjs --check-latest
 
       - name: Audit production dependencies
         shell: bash

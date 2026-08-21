@@ -82,8 +82,13 @@ assert(new Set(i18n.SUPPORTED_LOCALES).size === 16, "upstream locale list contai
 assert(Object.keys(i18n.LOCALE_CATALOGS).length === 16, "locale catalog map is incomplete");
 assert(i18n.normaliseLocale("en-US") === "en", "plain browser English must not become l33t English");
 assert(i18n.normaliseLocale("en_US_l33t") === "en_US_l33t", "l33t locale alias changed");
+assert(i18n.normaliseLocale("en-US-l33t") === "en_US_l33t", "hyphenated l33t locale alias changed");
+assert(i18n.normaliseLocale("cs-CZ") === "cs_CZ", "hyphenated Czech locale alias changed");
 assert(i18n.normaliseLocale("it-IT") === "it", "Italian locale fallback changed");
 assert(i18n.toLanguageTag("cs_CZ") === "cs-CZ", "locale was not converted to a language tag");
+for (const locale of i18n.SUPPORTED_LOCALES) {
+  assert(i18n.LOCALE_PACKS[locale]?.installApp, `${locale} locale is missing the PWA install label`);
+}
 
 for (const locale of i18n.SUPPORTED_LOCALES) {
   const path = i18n.LOCALE_CATALOGS[locale];

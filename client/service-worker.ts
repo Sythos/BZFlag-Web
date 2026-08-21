@@ -20,7 +20,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-const CACHE_NAME = "bzflag-web-client-v0.1.2";
+const CACHE_PREFIX = "bzflag-web-client-";
+const CACHE_NAME = `${CACHE_PREFIX}v0.1.2`;
 const ASSET_MANIFEST = "./assets/asset-manifest.json";
 const STATIC_ASSETS = [
   "./",
@@ -40,7 +41,10 @@ const STATIC_ASSETS = [
   ASSET_MANIFEST
 ] as const;
 
-type AssetManifest = { entries: Array<{ path: string }> };
+type AssetManifest = {
+  "relative-to"?: string;
+  entries: Array<{ path: string }>;
+};
 type ServiceWorkerEvent = Event & { waitUntil(promise: Promise<unknown>): void };
 type ServiceWorkerFetchEvent = ServiceWorkerEvent & {
   request: Request;
@@ -57,9 +61,14 @@ const serviceWorkerScope = self as unknown as ServiceWorkerScope;
 
 function isScopedRelativeAsset(path: unknown): path is string {
   if (typeof path !== "string" || !path.startsWith("./") || path.includes("\\") || path.includes("://")) return false;
+  if (path.includes("//") || path.includes("/./") || path.endsWith("/.") || path.includes("/../") || path.endsWith("/..")) return false;
   const scope = new URL("./", serviceWorkerScope.location.href);
   const target = new URL(path, serviceWorkerScope.location.href);
-  return target.origin === scope.origin && target.pathname.startsWith(scope.pathname) && !path.split("/").includes("..");
+  return target.origin === scope.origin
+    && target.pathname.startsWith(scope.pathname)
+    && target.search === ""
+    && target.hash === ""
+    && !path.split("/").includes("..");
 }
 
 async function resolveAssetManifest(): Promise<string[]> {
@@ -68,7 +77,7 @@ async function resolveAssetManifest(): Promise<string[]> {
     throw new Error(`Asset manifest request failed with HTTP ${response.status}`);
   }
   const manifest = await response.json() as Partial<AssetManifest>;
-  if (!Array.isArray(manifest.entries)) {
+  if (manifest["relative-to"] !== "./" || !Array.isArray(manifest.entries)) {
     throw new Error("Asset manifest does not contain an entries array");
   }
   const assetPaths = manifest.entries.map((entry) => entry.path);
@@ -88,7 +97,9 @@ serviceWorkerScope.addEventListener("install", (event) => {
 
 serviceWorkerScope.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)))).then(() => serviceWorkerScope.clients.claim())
+    caches.keys()
+      .then((keys) => Promise.all(keys.filter((key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME).map((key) => caches.delete(key))))
+      .then(() => serviceWorkerScope.clients.claim())
   );
 });
 

@@ -203,6 +203,39 @@ function bzFlagPacket(code: number, payload: Buffer = Buffer.alloc(0)): Buffer {
   return packet;
 }
 
+async function assertRejectedTargetGreeting(t: TestContext, greeting: Buffer): Promise<void> {
+  let targetBytes = Buffer.alloc(0);
+  const target = createTcpServer((socket) => {
+    let greetingSent = false;
+    socket.on('data', (data: Buffer | string) => {
+      targetBytes = Buffer.concat([targetBytes, Buffer.isBuffer(data) ? data : Buffer.from(data)]);
+      if (greetingSent || targetBytes.length < BZFLAG_CONNECT_HEADER.length) return;
+      assert.deepEqual(targetBytes.subarray(0, BZFLAG_CONNECT_HEADER.length), BZFLAG_CONNECT_HEADER);
+      greetingSent = true;
+      socket.write(greeting);
+    });
+  });
+  const targetPort = await listenTcp(target);
+  t.after(() => target.close());
+  const gateway = createGateway({
+    host: '127.0.0.1',
+    port: 0,
+    sessionToken: 'test-token',
+    allowPrivateAddresses: true,
+    allowedOrigins: ['http://localhost:3000'],
+    servers: [{ id: 'official-test', kind: 'official', host: '127.0.0.1', port: targetPort }],
+    limits: { targetHandshakeTimeoutMs: 1000, idleTimeoutMs: 5000 },
+  });
+  const address = await gateway.start();
+  t.after(() => gateway.stop());
+
+  const connection = await awaitableSocket(address.port);
+  assert.match(connection.response, /^HTTP\/1\.1 101 Switching Protocols/);
+  connection.connection.write(maskedWebSocketFrame(encodeBridgeMessage(CHANNEL_TCP, Buffer.from('must-not-forward'))));
+  await waitForSocketClose(connection.connection);
+  assert.deepEqual(targetBytes, BZFLAG_CONNECT_HEADER);
+}
+
 test('bridge envelope encodes explicit TCP and UDP channels', () => {
   const tcp = encodeBridgeMessage(CHANNEL_TCP, Buffer.from('tcp'));
   const udp = encodeBridgeMessage(CHANNEL_UDP, Buffer.from('udp'));
@@ -236,6 +269,17 @@ test('target policy rejects private and metadata address space unless explicitly
     servers: [{ id: 'private', kind: 'official', host: '127.0.0.1', port: 5154 }],
   });
   assert.equal(localFixture.allowPrivateAddresses, true);
+});
+
+test('target policy keeps TCP and UDP on the same non-local BZFS endpoint port', () => {
+  assert.throws(() => normalizeConfig({
+    servers: [{ id: 'split-port', kind: 'official', host: '8.8.8.8', port: 5154, udpPort: 5155 }],
+  }), /udpPort must match port/);
+  const localFixture = normalizeConfig({
+    allowPrivateAddresses: true,
+    servers: [{ id: 'split-port', kind: 'official', host: '127.0.0.1', port: 5154, udpPort: 5155 }],
+  });
+  assert.equal(localFixture.servers[0]?.udpPort, 5155);
 });
 
 test('configuration paths stay relative and the default target policy is official-only', () => {
@@ -462,6 +506,101 @@ test('gateway rejects a non-BZFS target before forwarding queued client bytes', 
   connection.connection.write(maskedWebSocketFrame(encodeBridgeMessage(CHANNEL_TCP, Buffer.from('client-secret'))));
   await waitForSocketClose(connection.connection);
   assert.deepEqual(targetBytes, BZFLAG_CONNECT_HEADER);
+});
+
+test('gateway closes a silent target when the upstream handshake deadline expires', async (t: TestContext) => {
+  let targetBytes = Buffer.alloc(0);
+  let probeSeenResolve: (() => void) | null = null;
+  const probeSeen = new Promise<void>((resolve) => {
+    probeSeenResolve = resolve;
+  });
+  const target = createTcpServer((socket) => {
+    socket.on('data', (data: Buffer | string) => {
+      targetBytes = Buffer.concat([targetBytes, Buffer.isBuffer(data) ? data : Buffer.from(data)]);
+      if (targetBytes.length >= BZFLAG_CONNECT_HEADER.length) probeSeenResolve?.();
+    });
+  });
+  const targetPort = await listenTcp(target);
+  t.after(() => target.close());
+  const gateway = createGateway({
+    host: '127.0.0.1',
+    port: 0,
+    sessionToken: 'test-token',
+    allowPrivateAddresses: true,
+    allowedOrigins: ['http://localhost:3000'],
+    servers: [{ id: 'official-test', kind: 'official', host: '127.0.0.1', port: targetPort }],
+    limits: { targetHandshakeTimeoutMs: 200, idleTimeoutMs: 5000 },
+  });
+  const address = await gateway.start();
+  t.after(() => gateway.stop());
+
+  const connection = await awaitableSocket(address.port);
+  assert.match(connection.response, /^HTTP\/1\.1 101 Switching Protocols/);
+  await probeSeen;
+  connection.connection.write(maskedWebSocketFrame(encodeBridgeMessage(CHANNEL_TCP, Buffer.from('must-not-forward'))));
+  await waitForSocketClose(connection.connection, 1500);
+  assert.deepEqual(targetBytes, BZFLAG_CONNECT_HEADER);
+});
+
+test('gateway accepts a fragmented BZFS greeting before releasing TCP traffic', async (t: TestContext) => {
+  let targetInput = Buffer.alloc(0);
+  let preambleSeen = false;
+  const target = createTcpServer((socket) => {
+    socket.on('data', (data: Buffer | string) => {
+      targetInput = Buffer.concat([targetInput, Buffer.isBuffer(data) ? data : Buffer.from(data)]);
+      if (!preambleSeen) {
+        if (targetInput.length < BZFLAG_CONNECT_HEADER.length) return;
+        assert.deepEqual(targetInput.subarray(0, BZFLAG_CONNECT_HEADER.length), BZFLAG_CONNECT_HEADER);
+        preambleSeen = true;
+        targetInput = targetInput.subarray(BZFLAG_CONNECT_HEADER.length);
+        socket.write(Buffer.from('BZFS', 'ascii'));
+        setTimeout(() => {
+          if (!socket.destroyed) socket.write(Buffer.from('0221', 'ascii'));
+        }, 20);
+        setTimeout(() => {
+          if (!socket.destroyed) socket.write(Buffer.from([7]));
+        }, 40);
+      }
+      if (preambleSeen && targetInput.length > 0) {
+        const payload = targetInput;
+        targetInput = Buffer.alloc(0);
+        setTimeout(() => {
+          if (!socket.destroyed) socket.write(Buffer.concat([Buffer.from('tcp-reply:'), payload]));
+        }, 20);
+      }
+    });
+  });
+  const targetPort = await listenTcp(target);
+  t.after(() => target.close());
+  const gateway = createGateway({
+    host: '127.0.0.1',
+    port: 0,
+    sessionToken: 'test-token',
+    allowPrivateAddresses: true,
+    allowedOrigins: ['http://localhost:3000'],
+    servers: [{ id: 'official-test', kind: 'official', host: '127.0.0.1', port: targetPort }],
+    limits: { targetHandshakeTimeoutMs: 1000, idleTimeoutMs: 5000 },
+  });
+  const address = await gateway.start();
+  t.after(() => gateway.stop());
+
+  const connection = await awaitableSocket(address.port);
+  assert.match(connection.response, /^HTTP\/1\.1 101 Switching Protocols/);
+  const greetingFrame = await readServerFrame(connection.connection, connection.remainder);
+  assert.deepEqual(decodeBridgeMessage(greetingFrame.payload).payload, Buffer.concat([Buffer.from('BZFS0221', 'ascii'), Buffer.from([7])]));
+
+  connection.connection.write(maskedWebSocketFrame(encodeBridgeMessage(CHANNEL_TCP, Buffer.from('fragmented-ok'))));
+  const replyFrame = await readServerFrame(connection.connection);
+  assert.deepEqual(decodeBridgeMessage(replyFrame.payload).payload, Buffer.from('tcp-reply:fragmented-ok'));
+  connection.connection.end(maskedWebSocketFrame(Buffer.alloc(0), 8));
+});
+
+test('gateway rejects a target with the wrong BZFS protocol version before relay', async (t: TestContext) => {
+  await assertRejectedTargetGreeting(t, Buffer.concat([Buffer.from('BZFS9999', 'ascii'), Buffer.from([7])]));
+});
+
+test('gateway rejects a target that returns the BZFS no-player id before relay', async (t: TestContext) => {
+  await assertRejectedTargetGreeting(t, Buffer.concat([Buffer.from('BZFS0221', 'ascii'), Buffer.from([255])]));
 });
 
 test('gateway withholds queued TCP and UDP traffic until the BZFS identity greeting is valid', async (t: TestContext) => {

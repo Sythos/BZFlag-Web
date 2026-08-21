@@ -27,6 +27,8 @@ SOFTWARE.
   type InputState = {
     playerId: number | null;
     physicsReady: boolean;
+    alive: boolean;
+    paused: boolean;
     order: number;
     status: number;
     timestamp: number;
@@ -34,7 +36,22 @@ SOFTWARE.
     velocity: [number, number, number];
     azimuth: number;
     angularVelocity: number;
+    clientTime: number;
+    nextShotId: number;
     [key: string]: any;
+  };
+  type SessionPhase = "connecting" | "handshaking" | "joining" | "accepted" | "joined" | "playing" | "dead" | "paused" | "rejected" | "left" | "closing" | "closed" | "error";
+  type SessionLifecycle = {
+    phase: SessionPhase;
+    joined: boolean;
+    alive: boolean;
+    paused: boolean;
+    respawnPending: boolean;
+    closed: boolean;
+    closeReason: string | null;
+    lastEvent: string | null;
+    tcpReady: boolean;
+    udpState: "disabled" | "idle" | "requested" | "ready" | "closed";
   };
   type ProtocolResult = BZFlagWebProtocolResult & {
     code: number;
@@ -58,8 +75,10 @@ SOFTWARE.
       error?: string;
     };
     snapshot(): unknown;
+    bytes?: () => Uint8Array;
     reset?(): void;
   };
+  type WorldEnvelopeDecoder = (envelope: unknown, options?: Record<string, unknown>) => Promise<unknown>;
   type ProtocolSession = {
     connection: Connection;
     inputState: InputState;
@@ -76,6 +95,7 @@ SOFTWARE.
     flagNegotiationSent: boolean;
     udpRequested: boolean;
     udpReady: boolean;
+    lifecycle: SessionLifecycle;
     serverPlayerOrder: number | null;
     queriesSent: boolean;
     settingsRequested: boolean;
@@ -88,11 +108,12 @@ SOFTWARE.
       total: number | null;
       bytes: Uint8Array;
       assembler: WorldTransferAdapter | null;
+      decodeEnvelope: WorldEnvelopeDecoder | null;
       snapshot: unknown;
       summary: unknown;
     };
-    tcpStream: { push(payload: Uint8Array): Uint8Array[] };
-    udpStream: { push(payload: Uint8Array): Uint8Array[] };
+    tcpStream: { push(payload: Uint8Array): Uint8Array[]; reset?: () => void };
+    udpStream: { push(payload: Uint8Array): Uint8Array[]; reset?: () => void };
     [key: string]: any;
   };
 
@@ -104,6 +125,15 @@ SOFTWARE.
   const WEBSOCKET_SUBPROTOCOL = "bzflag-web-v1";
   const TOKEN_SUBPROTOCOL_PREFIX = "bzflag-token.";
   const CHAT_MESSAGE_MAX_LENGTH = 128;
+  const PLAYER_ALIVE_MASK = 1;
+  const PLAYER_PAUSED_MASK = 1 << 1;
+  const MAX_PHYSICS_COORDINATE = 1_000_000;
+  const MAX_PHYSICS_SPEED = 1_000;
+  const MAX_PHYSICS_ANGULAR_VELOCITY = 32.766;
+  const MAX_PHYSICS_STEP_SECONDS = 0.1;
+  const MAX_CLIENT_TIMESTAMP = 1_000_000_000;
+  const MAX_CLIENT_CLOCK_SECONDS = 4_000_000_000;
+  const SESSION_REASON_BYTES = 160;
   // The primary bindings below mirror BZFlag 2.4.31's ActionBinding defaults.
   // WASD and F/T remain browser-friendly aliases for the existing web UI.
   const COMMAND_MAP: Record<string, string> = {
@@ -145,14 +175,206 @@ SOFTWARE.
       // packets are emitted; sending guessed positions would be unsafe.
       playerId: null,
       physicsReady: false,
+      alive: false,
+      paused: false,
       order: 0,
       status: window.BZFlagWebProtocol?.PLAYER_STATUS?.dead || 0,
       timestamp: 0,
       position: [0, 0, 0],
       velocity: [0, 0, 0],
       azimuth: 0,
-      angularVelocity: 0
+      angularVelocity: 0,
+      clientTime: 0,
+      nextShotId: 0
     };
+  }
+
+  function boundedNumber(value: unknown, minimum: number, maximum: number, fallback: number): number {
+    const number = Number(value);
+    return Number.isFinite(number) ? Math.min(maximum, Math.max(minimum, number)) : fallback;
+  }
+
+  function boundedInteger(value: unknown, minimum: number, maximum: number, fallback: number): number {
+    return Math.trunc(boundedNumber(value, minimum, maximum, fallback));
+  }
+
+  function boundedPlayerId(value: unknown, fallback: number | null = null): number | null {
+    const number = Number(value);
+    return Number.isInteger(number) && number >= 0 && number <= 254 ? number : fallback;
+  }
+
+  function boundedVector(value: unknown, fallback: [number, number, number], maximum: number): [number, number, number] {
+    const source = Array.isArray(value) || ArrayBuffer.isView(value) ? value as ArrayLike<unknown> : fallback;
+    return [
+      boundedNumber(source[0], -maximum, maximum, fallback[0]),
+      boundedNumber(source[1], -maximum, maximum, fallback[1]),
+      boundedNumber(source[2], -maximum, maximum, fallback[2])
+    ];
+  }
+
+  function createSessionLifecycle(useUDP = true): SessionLifecycle {
+    return {
+      phase: "connecting",
+      joined: false,
+      alive: false,
+      paused: false,
+      respawnPending: false,
+      closed: false,
+      closeReason: null,
+      lastEvent: null,
+      tcpReady: false,
+      udpState: useUDP ? "idle" : "disabled"
+    };
+  }
+
+  function applySessionLifecycle(
+    lifecycle: SessionLifecycle | null | undefined,
+    event: string,
+    detail: Record<string, any> = {}
+  ): SessionLifecycle {
+    const current = lifecycle || createSessionLifecycle(detail.useUDP !== false);
+    const next: SessionLifecycle = { ...current, lastEvent: String(event || "unknown") };
+    const reason = String(detail.reason || "").slice(0, SESSION_REASON_BYTES);
+    switch (event) {
+      case "socket-open":
+        next.phase = "handshaking";
+        next.tcpReady = true;
+        break;
+      case "handshake-ready":
+        next.phase = "joining";
+        next.tcpReady = true;
+        break;
+      case "enter-sent":
+        if (next.phase === "connecting" || next.phase === "handshaking") next.phase = "joining";
+        break;
+      case "accepted":
+        next.phase = "accepted";
+        next.joined = false;
+        next.alive = false;
+        next.paused = false;
+        next.respawnPending = false;
+        break;
+      case "local-joined":
+        next.phase = "joined";
+        next.joined = true;
+        next.alive = false;
+        next.paused = false;
+        next.respawnPending = false;
+        break;
+      case "alive":
+        next.phase = "playing";
+        next.joined = true;
+        next.alive = true;
+        next.paused = false;
+        next.respawnPending = false;
+        break;
+      case "killed":
+      case "death":
+        next.phase = "dead";
+        next.joined = true;
+        next.alive = false;
+        next.paused = false;
+        next.respawnPending = true;
+        break;
+      case "pause":
+        next.paused = Boolean(detail.paused);
+        next.phase = next.paused ? "paused" : (next.alive ? "playing" : "dead");
+        break;
+      case "restart-requested":
+        if (next.joined && !next.alive) next.respawnPending = true;
+        break;
+      case "local-left":
+      case "leave":
+        next.phase = "left";
+        next.joined = false;
+        next.alive = false;
+        next.paused = false;
+        next.respawnPending = false;
+        break;
+      case "rejected":
+        next.phase = "rejected";
+        next.joined = false;
+        next.alive = false;
+        next.paused = false;
+        next.respawnPending = false;
+        next.closeReason = reason || next.closeReason;
+        break;
+      case "udp-requested":
+        if (next.udpState !== "disabled") next.udpState = "requested";
+        break;
+      case "udp-ready":
+        if (next.udpState !== "disabled") next.udpState = "ready";
+        break;
+      case "udp-closed":
+        next.udpState = next.udpState === "disabled" ? "disabled" : "closed";
+        break;
+      case "close-requested":
+        next.phase = next.phase === "rejected" || next.phase === "left" ? next.phase : "closing";
+        next.closeReason = reason || next.closeReason;
+        next.udpState = next.udpState === "disabled" ? "disabled" : "closed";
+        break;
+      case "socket-error":
+        next.phase = "error";
+        next.closeReason = reason || next.closeReason;
+        break;
+      case "socket-close":
+        next.phase = "closed";
+        next.closed = true;
+        next.tcpReady = false;
+        next.udpState = next.udpState === "disabled" ? "disabled" : "closed";
+        next.closeReason = reason || next.closeReason;
+        break;
+      default:
+        break;
+    }
+    return next;
+  }
+
+  function resetClientPhysics(inputState: InputState, preservePosition = false): void {
+    if (!inputState) return;
+    inputState.physicsReady = false;
+    inputState.alive = false;
+    inputState.paused = false;
+    inputState.velocity = [0, 0, 0];
+    inputState.angularVelocity = 0;
+    inputState.clientTime = 0;
+    inputState.nextShotId = 0;
+    if (!preservePosition) inputState.position = [0, 0, 0];
+  }
+
+  function sanitizePhysicsSnapshot(data: Record<string, any> = {}, current: Partial<InputState> = {}): Record<string, any> {
+    const fallbackPosition = Array.isArray(current.position) ? current.position : [0, 0, 0];
+    const fallbackVelocity = Array.isArray(current.velocity) ? current.velocity : [0, 0, 0];
+    return {
+      playerId: boundedPlayerId(data.playerId, boundedPlayerId(current.playerId)),
+      order: boundedInteger(data.order, 0, 0x7fffffff, boundedInteger(current.order, 0, 0x7fffffff, 0)),
+      status: boundedInteger(data.status, -0x8000, 0x7fff, boundedInteger(current.status, -0x8000, 0x7fff, 0)),
+      timestamp: boundedNumber(data.timestamp, -MAX_CLIENT_TIMESTAMP, MAX_CLIENT_TIMESTAMP, boundedNumber(current.timestamp, -MAX_CLIENT_TIMESTAMP, MAX_CLIENT_TIMESTAMP, 0)),
+      position: boundedVector(data.position, fallbackPosition as [number, number, number], MAX_PHYSICS_COORDINATE),
+      velocity: boundedVector(data.velocity, fallbackVelocity as [number, number, number], MAX_PHYSICS_SPEED),
+      azimuth: boundedNumber(data.azimuth, -Math.PI * 2, Math.PI * 2, boundedNumber(current.azimuth, -Math.PI * 2, Math.PI * 2, 0)),
+      angularVelocity: boundedNumber(data.angularVelocity, -MAX_PHYSICS_ANGULAR_VELOCITY, MAX_PHYSICS_ANGULAR_VELOCITY, boundedNumber(current.angularVelocity, -MAX_PHYSICS_ANGULAR_VELOCITY, MAX_PHYSICS_ANGULAR_VELOCITY, 0))
+    };
+  }
+
+  function advanceClientPhysics(inputState: InputState, nowSeconds = Date.now() / 1000): boolean {
+    if (!inputState?.physicsReady || inputState.alive === false || inputState.paused) return false;
+    const now = boundedNumber(nowSeconds, 0, MAX_CLIENT_CLOCK_SECONDS, inputState.clientTime || 0);
+    const previous = boundedNumber(inputState.clientTime, 0, MAX_CLIENT_CLOCK_SECONDS, now);
+    const delta = Math.min(MAX_PHYSICS_STEP_SECONDS, Math.max(0, now - previous));
+    inputState.clientTime = now;
+    if (delta <= 0) return false;
+    const velocity = boundedVector(inputState.velocity, [0, 0, 0], MAX_PHYSICS_SPEED);
+    const position = boundedVector(inputState.position, [0, 0, 0], MAX_PHYSICS_COORDINATE);
+    inputState.velocity = velocity;
+    inputState.position = boundedVector([
+      position[0] + velocity[0] * delta,
+      position[1] + velocity[1] * delta,
+      position[2] + velocity[2] * delta
+    ], position, MAX_PHYSICS_COORDINATE);
+    inputState.azimuth = boundedNumber(inputState.azimuth + boundedNumber(inputState.angularVelocity, -MAX_PHYSICS_ANGULAR_VELOCITY, MAX_PHYSICS_ANGULAR_VELOCITY, 0) * delta, -Math.PI * 2, Math.PI * 2, inputState.azimuth);
+    inputState.timestamp = boundedNumber(inputState.timestamp + delta, -MAX_CLIENT_TIMESTAMP, MAX_CLIENT_TIMESTAMP, inputState.timestamp);
+    return true;
   }
 
   const get = <T extends HTMLElement = HTMLElement>(id: string): T => document.getElementById(id) as T;
@@ -434,9 +656,137 @@ SOFTWARE.
     return true;
   }
 
+  function ensureSessionLifecycle(session: ProtocolSession): SessionLifecycle {
+    if (!session.lifecycle) {
+      session.lifecycle = createSessionLifecycle(session.connection?.useUDP !== false);
+    }
+    return session.lifecycle;
+  }
+
+  function updateSessionLifecycle(session: ProtocolSession, event: string, detail: Record<string, any> = {}): SessionLifecycle {
+    const lifecycle = applySessionLifecycle(ensureSessionLifecycle(session), event, detail);
+    session.lifecycle = lifecycle;
+    if (event === "udp-requested") session.udpRequested = true;
+    if (event === "udp-ready") {
+      session.udpReady = true;
+      session.udpRequested = true;
+    }
+    if (event === "udp-closed" || event === "close-requested" || event === "socket-close") {
+      session.udpReady = false;
+      session.udpRequested = false;
+    }
+    if (session.inputState) {
+      if (event === "local-joined") {
+        const playerId = boundedPlayerId(detail.playerId, session.inputState.playerId);
+        session.inputState.playerId = playerId;
+        resetClientPhysics(session.inputState);
+      } else if (event === "alive") {
+        session.inputState.alive = true;
+        session.inputState.paused = false;
+        session.inputState.physicsReady = true;
+        session.inputState.clientTime = Date.now() / 1000;
+      } else if (event === "killed" || event === "death") {
+        resetClientPhysics(session.inputState, true);
+      } else if (event === "pause") {
+        session.inputState.paused = Boolean(detail.paused);
+      } else if (event === "local-left" || event === "leave" || event === "socket-close") {
+        const playerId = session.inputState.playerId;
+        resetClientPhysics(session.inputState);
+        session.inputState.playerId = event === "socket-close" ? null : playerId;
+      }
+    }
+    if (typeof document !== "undefined" && typeof CustomEvent !== "undefined") {
+      document.dispatchEvent(new CustomEvent("bzflag:session-state", {
+        detail: Object.freeze({ event, lifecycle, reason: detail.reason || null })
+      }));
+    }
+    return lifecycle;
+  }
+
+  function finalizeSessionClose(session: ProtocolSession, reason = "") : boolean {
+    if (ensureSessionLifecycle(session).closed) return false;
+    updateSessionLifecycle(session, "socket-close", { reason });
+    session.handshakeComplete = false;
+    session.serverVersion = null;
+    session.serverPlayerId = null;
+    session.serverPlayerOrder = null;
+    session.enterSent = false;
+    session.flagNegotiationSent = false;
+    session.queriesSent = false;
+    session.settingsRequested = false;
+    session.worldHashRequested = false;
+    session.tcpStream?.reset?.();
+    session.udpStream?.reset?.();
+    session.renderer?.stop?.();
+    return true;
+  }
+
+  function closeSession(session: ProtocolSession, code = 1000, reason = "Client closed the session"): boolean {
+    if (ensureSessionLifecycle(session).closed) return false;
+    const safeReason = String(reason || "Client closed the session").slice(0, SESSION_REASON_BYTES);
+    updateSessionLifecycle(session, "close-requested", { reason: safeReason });
+    const socket = session.socket;
+    if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CLOSING)) {
+      try {
+        socket.close(code, safeReason);
+      } catch {
+        finalizeSessionClose(session, safeReason);
+      }
+    } else {
+      finalizeSessionClose(session, safeReason);
+    }
+    return true;
+  }
+
   function acceptsServerOrder(lastOrder: number | null, nextOrder: unknown): boolean {
     const order = Number(nextOrder);
     return Number.isInteger(order) && order >= 0 && order <= 0x7fffffff && (lastOrder === null || order > lastOrder);
+  }
+
+  function isGameplayInput(command: string): boolean {
+    return [
+      "move-forward", "move-backward", "turn-left", "turn-right", "fire",
+      "drop", "drop-flag", "grab", "grab-flag", "capture", "capture-flag", "shot-end"
+    ].includes(command);
+  }
+
+  function canSendSessionInput(lifecycle: SessionLifecycle, command: string, phase: string): boolean {
+    if (!lifecycle || lifecycle.closed || lifecycle.phase === "rejected" || lifecycle.phase === "left" || lifecycle.phase === "closing") return false;
+    if (isGameplayInput(command)) return lifecycle.joined && lifecycle.alive && !lifecycle.paused;
+    if (command === "restart" || command === "alive") return lifecycle.joined && !lifecycle.alive && phase === (command === "restart" ? "end" : "start");
+    if (command === "pause") return lifecycle.joined;
+    if (command === "exit") return true;
+    return true;
+  }
+
+  function createFiringState(inputState: InputState, connection: Connection = {}): Record<string, any> | null {
+    const playerId = boundedPlayerId(inputState?.playerId);
+    if (playerId === null || !inputState?.physicsReady || !inputState.alive || inputState.paused) return null;
+    const protocol = window.BZFlagWebProtocol;
+    const teamNames = protocol?.TEAM_BY_NAME as Record<string, number> | undefined;
+    const configuredTeam = teamNames ? teamNames[String(connection.team || "automatic")] : 0;
+    const team = boundedInteger(inputState.team ?? configuredTeam, -1, 7, 0);
+    const shotId = boundedInteger(inputState.nextShotId, 0, 0xffff, 0);
+    inputState.nextShotId = (shotId + 1) & 0xffff;
+    const azimuth = boundedNumber(inputState.azimuth, -Math.PI * 2, Math.PI * 2, 0);
+    const speed = boundedNumber(connection.shotSpeed, 0, MAX_PHYSICS_SPEED, 100);
+    const position = boundedVector(inputState.position, [0, 0, 0], MAX_PHYSICS_COORDINATE);
+    const velocity = boundedVector(inputState.velocity, [0, 0, 0], MAX_PHYSICS_SPEED);
+    return {
+      playerId,
+      shotId,
+      timeSent: boundedNumber(inputState.timestamp, -MAX_CLIENT_TIMESTAMP, MAX_CLIENT_TIMESTAMP, 0),
+      position,
+      velocity: [
+        boundedNumber(velocity[0] + Math.cos(azimuth) * speed, -MAX_PHYSICS_SPEED, MAX_PHYSICS_SPEED, velocity[0]),
+        boundedNumber(velocity[1] + Math.sin(azimuth) * speed, -MAX_PHYSICS_SPEED, MAX_PHYSICS_SPEED, velocity[1]),
+        velocity[2]
+      ],
+      dt: 0,
+      team,
+      flag: String(inputState.flag || connection.flag || "").slice(0, 2),
+      lifetime: boundedNumber(inputState.shotLifetime ?? connection.shotLifetime, 0, 120, 3)
+    };
   }
 
   type ChatProtocolApi = BZFlagWebProtocolApi & {
@@ -525,10 +875,14 @@ SOFTWARE.
   function sendInitialProtocolPackets(session: ProtocolSession): void {
     const protocol = window.BZFlagWebProtocol;
     if (!protocol || !session.handshakeComplete || session.enterSent) return;
+    ensureSessionLifecycle(session);
     const playerId = session.serverPlayerId;
     session.inputState.playerId = Number.isInteger(playerId) ? playerId : null;
     if (session.connection.useUDP !== false && protocol.encodeUDPLinkRequest && playerId !== null) {
       session.udpRequested = sendSessionPacket(session, CHANNEL_UDP, protocol.encodeUDPLinkRequest(playerId));
+      if (session.udpRequested) updateSessionLifecycle(session, "udp-requested");
+    } else if (session.connection.useUDP === false) {
+      session.lifecycle.udpState = "disabled";
     }
     if (protocol.encodeFlagNegotiation) {
       session.flagNegotiationSent = sendSessionPacket(session, CHANNEL_TCP, protocol.encodeFlagNegotiation());
@@ -536,10 +890,11 @@ SOFTWARE.
     if (protocol.encodeEnter) {
       session.enterSent = sendSessionPacket(session, CHANNEL_TCP, protocol.encodeEnter(session.connection));
     }
+    if (session.enterSent) updateSessionLifecycle(session, "enter-sent");
     if (session.enterSent) appendEvent("BZFlag enter packet sent.");
   }
 
-  function appendWorldChunk(session: ProtocolSession, result: ProtocolResult): void {
+  async function appendWorldChunk(session: ProtocolSession, result: ProtocolResult): Promise<void> {
     const protocol = window.BZFlagWebProtocol;
     if (!protocol) return;
     const data = result?.data;
@@ -571,9 +926,26 @@ SOFTWARE.
     if (!transfer.summary) {
       throw new Error("BZFlag world transfer completed without a safe summary");
     }
-    const worldSummary = transfer.summary;
+    let worldSummary: unknown = transfer.summary;
+    const transferSnapshot = transfer.assembler.snapshot?.() as {
+      envelope?: unknown;
+      chunkCount?: number;
+    } | null;
+    if (transfer.decodeEnvelope && transferSnapshot?.envelope) {
+      try {
+        worldSummary = await transfer.decodeEnvelope(transferSnapshot.envelope, {
+          mapVersion: 1
+        });
+        transfer.summary = worldSummary;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "BZFlag world database decoding failed";
+        appendEvent(`World decoder rejected the native database: ${message}`, "error");
+        setStatus(message, "error");
+        throw error;
+      }
+    }
     transfer.bytes = new Uint8Array();
-    appendEvent(`World transfer complete (${transfer.offset} bytes).`);
+    appendEvent(`World transfer complete (${transfer.offset} bytes); native database decoded.`);
     (session.renderer as BZFlagWebRendererHandle & {
       setWorldData?: (summary: unknown) => void;
     })?.setWorldData?.(worldSummary);
@@ -582,7 +954,7 @@ SOFTWARE.
         detail: Object.freeze({
           bytesReceived: transfer.offset,
           totalBytes: transfer.total,
-          chunkCount: snapshot.chunkCount,
+          chunkCount: transferSnapshot?.chunkCount ?? snapshot.chunkCount,
           world: worldSummary
         })
       }));
@@ -607,32 +979,49 @@ SOFTWARE.
   function handleProtocolFollowUp(session: ProtocolSession, result: ProtocolResult): void {
     const protocol = window.BZFlagWebProtocol;
     if (!protocol || !result || result.valid === false) return;
+    ensureSessionLifecycle(session);
     if (protocol.MSG_SUPER_KILL !== undefined && result.code === protocol.MSG_SUPER_KILL) {
       session.protocolError = true;
       setStatus(t("serverDisconnect"), "error");
       appendEvent(t("serverDisconnect"), "error");
-      if (session.socket?.readyState === WebSocket.OPEN) {
-        session.socket.close(1008, "BZFlag server requested disconnect");
-      }
+      updateSessionLifecycle(session, "socket-error", { reason: "BZFlag server requested disconnect" });
+      closeSession(session, 1008, "BZFlag server requested disconnect");
       return;
     }
     if (result.code === protocol.MSG_UDP_LINK_REQUEST) {
-      if (protocol.encodeUDPLinkEstablished) {
+      if (session.connection?.useUDP !== false && protocol.encodeUDPLinkEstablished) {
         sendSessionPacket(session, result.channel ?? CHANNEL_TCP, protocol.encodeUDPLinkEstablished());
       }
       return;
     }
     if (result.code === protocol.MSG_UDP_LINK_ESTABLISHED) {
-      session.udpReady = true;
-      appendEvent("BZFlag UDP link established.");
+      if (session.connection?.useUDP !== false) {
+        updateSessionLifecycle(session, "udp-ready");
+        appendEvent("BZFlag UDP link established.");
+      }
       return;
     }
     if (result.code === protocol.MSG_ACCEPT) {
+      updateSessionLifecycle(session, "accepted");
       if (!session.queriesSent) {
         session.queriesSent = true;
         if (protocol.encodeQueryGame) sendSessionPacket(session, CHANNEL_TCP, protocol.encodeQueryGame());
         if (protocol.encodeQueryPlayers) sendSessionPacket(session, CHANNEL_TCP, protocol.encodeQueryPlayers());
       }
+      return;
+    }
+    if (protocol.MSG_REJECT !== undefined && result.code === protocol.MSG_REJECT) {
+      const reason = String(result.data?.reason || "BZFlag server rejected the player");
+      updateSessionLifecycle(session, "rejected", { reason });
+      setStatus(reason, "error");
+      appendEvent(reason, "error");
+      closeSession(session, 1008, reason);
+      return;
+    }
+    if (protocol.MSG_REMOVE_PLAYER !== undefined && result.code === protocol.MSG_REMOVE_PLAYER
+      && result.data?.playerId === session.inputState?.playerId) {
+      updateSessionLifecycle(session, "local-left", { playerId: result.data.playerId });
+      closeSession(session, 1000, "BZFlag player left the server");
       return;
     }
     if (result.code === protocol.MSG_NEGOTIATE_FLAGS) {
@@ -655,11 +1044,18 @@ SOFTWARE.
       return;
     }
     if (result.code === protocol.MSG_GET_WORLD) {
-      appendWorldChunk(session, result);
+      void appendWorldChunk(session, result).catch(() => {
+        session.protocolError = true;
+        if (session.socket?.readyState === WebSocket.OPEN) session.socket.close(1002, "Invalid BZFlag world database");
+      });
     }
   }
 
-  function connectGateway(connection: Connection, onMessage: (data: unknown) => void): WebSocket | null {
+  function connectGateway(
+    connection: Connection,
+    onMessage: (data: unknown) => void,
+    onSessionEvent: (event: string, detail?: Record<string, any>) => void = () => undefined
+  ): WebSocket | null {
     let socket: WebSocket;
     try {
       const endpoint = toWebSocketUrl(connection?.gateway, connection);
@@ -672,19 +1068,102 @@ SOFTWARE.
     }
     socket.binaryType = "arraybuffer";
     socket.addEventListener("open", () => {
+      onSessionEvent("socket-open");
       setStatus(t("connected"), "success");
       appendEvent(`Binary BZWB bridge ready for server ID ${safeText(connection?.serverId)}.`);
       appendEvent("Gateway is validating the BZFS handshake before forwarding game traffic.");
     });
     socket.addEventListener("message", (event) => onMessage(event.data));
     socket.addEventListener("error", () => {
+      onSessionEvent("socket-error", { reason: "Gateway WebSocket error" });
       setStatus(t("gatewayUnavailable"), "warning");
       appendEvent(t("gatewayUnavailable"), "warning");
     });
-    socket.addEventListener("close", () => {
+    socket.addEventListener("close", (event) => {
+      onSessionEvent("socket-close", { code: event?.code, reason: event?.reason });
       setStatus(t("disconnected"), "warning");
     });
     return socket;
+  }
+
+  function resultPlayerId(result: ProtocolResult): number | null {
+    const data = result?.data;
+    const direct = boundedPlayerId(data?.playerId ?? data?.victim ?? result?.player?.playerId);
+    if (direct !== null) return direct;
+    const payload = toUint8Array(result?.payload);
+    return payload.byteLength > 0 ? boundedPlayerId(payload[0]) : null;
+  }
+
+  function isLocalResult(session: ProtocolSession, result: ProtocolResult): boolean {
+    const localPlayerId = boundedPlayerId(session.inputState?.playerId);
+    const eventPlayerId = resultPlayerId(result);
+    return localPlayerId !== null && eventPlayerId === localPlayerId;
+  }
+
+  function applySessionProtocolResult(session: ProtocolSession, result: ProtocolResult): boolean {
+    const protocol = window.BZFlagWebProtocol;
+    if (!protocol || !result || result.valid === false) return true;
+    ensureSessionLifecycle(session);
+    const data = result.data || {};
+    if (result.code === protocol.MSG_ADD_PLAYER && result.local && result.player) {
+      const playerId = boundedPlayerId(result.player.playerId);
+      if (playerId !== null) {
+        session.inputState.playerId = playerId;
+        session.serverPlayerId = playerId;
+        session.serverPlayerOrder = null;
+        updateSessionLifecycle(session, "local-joined", { playerId });
+        appendEvent(`Assigned BZFlag player ID ${playerId}.`);
+      }
+    }
+    if (!isLocalResult(session, result)) return true;
+    if (result.code === protocol.MSG_ALIVE && data) {
+      const snapshot = sanitizePhysicsSnapshot({ ...data, status: PLAYER_ALIVE_MASK }, session.inputState);
+      session.serverPlayerOrder = null;
+      updateSessionLifecycle(session, "alive", { playerId: snapshot.playerId });
+      Object.assign(session.inputState, snapshot, {
+        physicsReady: true,
+        alive: true,
+        paused: false,
+        status: PLAYER_ALIVE_MASK,
+        clientTime: Date.now() / 1000
+      });
+      return true;
+    }
+    if ((result.code === protocol.MSG_PLAYER_UPDATE || result.code === protocol.MSG_PLAYER_UPDATE_SMALL) && data) {
+      if (!acceptsServerOrder(session.serverPlayerOrder, data.order)) return false;
+      const snapshot = sanitizePhysicsSnapshot(data, session.inputState);
+      const alive = typeof data.alive === "boolean" ? data.alive : (snapshot.status & PLAYER_ALIVE_MASK) !== 0;
+      const paused = (snapshot.status & PLAYER_PAUSED_MASK) !== 0;
+      session.serverPlayerOrder = snapshot.order;
+      Object.assign(session.inputState, snapshot, {
+        physicsReady: true,
+        alive,
+        paused,
+        clientTime: Date.now() / 1000
+      });
+      if (!alive) updateSessionLifecycle(session, "killed", { playerId: snapshot.playerId });
+      else {
+        if (!session.lifecycle.alive) updateSessionLifecycle(session, "alive", { playerId: snapshot.playerId });
+        if (paused) updateSessionLifecycle(session, "pause", { playerId: snapshot.playerId, paused: true });
+        else if (session.lifecycle.paused) updateSessionLifecycle(session, "pause", { playerId: snapshot.playerId, paused: false });
+      }
+      return true;
+    }
+    if (protocol.MSG_KILLED !== undefined && result.code === protocol.MSG_KILLED) {
+      updateSessionLifecycle(session, "killed", { playerId: resultPlayerId(result) });
+      appendEvent("The local tank was destroyed.", "warning");
+      return true;
+    }
+    if (protocol.MSG_PAUSE !== undefined && result.code === protocol.MSG_PAUSE) {
+      const paused = typeof data.paused === "boolean" ? data.paused : toUint8Array(result.payload)[1] === 1;
+      updateSessionLifecycle(session, "pause", { playerId: resultPlayerId(result), paused });
+      return true;
+    }
+    if (protocol.MSG_REMOVE_PLAYER !== undefined && result.code === protocol.MSG_REMOVE_PLAYER) {
+      updateSessionLifecycle(session, "local-left", { playerId: resultPlayerId(result) });
+      return true;
+    }
+    return true;
   }
 
   function handleGatewayMessage(data: unknown, session: ProtocolSession): void {
@@ -700,6 +1179,7 @@ SOFTWARE.
           session.serverVersion = greeting.version ?? null;
           session.serverPlayerId = greeting.playerId ?? null;
           session.inputState.playerId = greeting.playerId ?? null;
+          updateSessionLifecycle(session, "handshake-ready", { playerId: greeting.playerId });
           appendEvent(`BZFS ${greeting.version} handshake complete; gateway player ID ${greeting.playerId}.`);
           sendInitialProtocolPackets(session);
           serverPayload = greeting.payload;
@@ -709,7 +1189,8 @@ SOFTWARE.
         const packets = stream ? stream.push(serverPayload) : [serverPayload];
         for (const packet of packets) {
           const result = protocol.consume(bridge.channel, packet, { nickname: session.connection?.nickname }) as ProtocolResult;
-          const transition = session.worldState?.apply(result);
+          const applyToWorld = applySessionProtocolResult(session, result);
+          const transition = applyToWorld ? session.worldState?.apply(result) : null;
           if (transition?.applied && session.worldState) {
             const snapshot = session.worldState.snapshot();
             session.renderer?.setWorldState?.(snapshot);
@@ -717,21 +1198,6 @@ SOFTWARE.
               document.dispatchEvent(new CustomEvent("bzflag:world-state", {
                 detail: snapshot
               }));
-            }
-          }
-          if (result?.local && result.player && session.inputState) {
-            session.inputState.playerId = Number.isInteger(result.player.playerId) ? Number(result.player.playerId) : null;
-            session.serverPlayerOrder = null;
-            appendEvent(`Assigned BZFlag player ID ${result.player.playerId}.`);
-          }
-          if (result?.data && session.inputState && result.data.playerId === session.inputState.playerId) {
-            if (result.code === protocol.MSG_ALIVE) {
-              session.serverPlayerOrder = null;
-              Object.assign(session.inputState, result.data, { physicsReady: true });
-            } else if ((result.code === protocol.MSG_PLAYER_UPDATE || result.code === protocol.MSG_PLAYER_UPDATE_SMALL)
-              && acceptsServerOrder(session.serverPlayerOrder, result.data.order)) {
-              session.serverPlayerOrder = Number(result.data.order);
-              Object.assign(session.inputState, result.data, { physicsReady: true });
             }
           }
           handleProtocolFollowUp(session, result);
@@ -754,7 +1220,8 @@ SOFTWARE.
     socket: WebSocket | null,
     audio: AudioEngine,
     getInputState: (command?: string, phase?: string, key?: string) => Record<string, any> = () => ({}),
-    getChannel: (command?: string, phase?: string, state?: Record<string, any>, payload?: Uint8Array) => number | null = () => CHANNEL_TCP
+    getChannel: (command?: string, phase?: string, state?: Record<string, any>, payload?: Uint8Array) => number | null = () => CHANNEL_TCP,
+    onCommand: (command?: string, phase?: string, state?: Record<string, any>, payload?: Uint8Array, channel?: number) => void = () => undefined
   ): () => void {
     const pressed = new Set();
     const sendCommand = (command: string, phase: string, key: string): void => {
@@ -772,6 +1239,7 @@ SOFTWARE.
             return;
           }
           socket.send(encodeBridgeMessage(channel, payload) as unknown as ArrayBuffer);
+          onCommand(command, phase, state, payload, channel);
         }
       }
       appendEvent(`${command} (${phase})`);
@@ -816,7 +1284,7 @@ SOFTWARE.
     return udpReady && udpCommands.has(command) ? CHANNEL_UDP : CHANNEL_TCP;
   }
 
-  function bindControls(audio: AudioEngine, renderer: BZFlagWebRendererHandle): void {
+  function bindControls(audio: AudioEngine, renderer: BZFlagWebRendererHandle, onDisconnect: () => void = () => undefined): void {
     const audioToggle = get("audio-toggle");
     const volume = get<HTMLInputElement>("volume");
     const fullscreen = get("fullscreen-button");
@@ -838,7 +1306,7 @@ SOFTWARE.
       }
     });
     disconnect?.addEventListener("click", () => {
-      renderer.stop?.();
+      onDisconnect();
       window.sessionStorage.removeItem(CONNECTION_KEY);
       window.location.assign("./index.html");
     });
@@ -878,6 +1346,7 @@ SOFTWARE.
     const canvas = get<HTMLCanvasElement>("game-canvas");
     const inputState = createInputState();
     let worldAssembler: WorldTransferAdapter | null = null;
+    let worldDecodeEnvelope: WorldEnvelopeDecoder | null = null;
     try {
       const worldModule = await import(new URL("./dist/world.js", window.location.href).href);
       const worldTransferLimit = window.BZFlagWebProtocol?.MAX_WORLD_BYTES;
@@ -887,6 +1356,9 @@ SOFTWARE.
             ? worldTransferLimit
             : undefined
         });
+      }
+      if (typeof worldModule.decodeWorldEnvelope === "function") {
+        worldDecodeEnvelope = worldModule.decodeWorldEnvelope as WorldEnvelopeDecoder;
       }
     } catch (error) {
       appendEvent(`World transfer module unavailable: ${error instanceof Error ? error.message : "load failure"}`, "warning");
@@ -909,7 +1381,6 @@ SOFTWARE.
     });
     renderer.setWorldState?.(worldState);
     updateRendererStatus(renderer.mode);
-    bindControls(audio, renderer);
     const protocolApi = window.BZFlagWebProtocol;
     if (!protocolApi) {
       appendEvent("BZFlag protocol module unavailable.", "error");
@@ -931,6 +1402,7 @@ SOFTWARE.
       flagNegotiationSent: false,
       udpRequested: false,
       udpReady: false,
+      lifecycle: createSessionLifecycle(connection.useUDP !== false),
       serverPlayerOrder: null,
       queriesSent: false,
       settingsRequested: false,
@@ -943,28 +1415,58 @@ SOFTWARE.
         total: null,
         bytes: new Uint8Array(),
         assembler: worldAssembler,
+        decodeEnvelope: worldDecodeEnvelope,
         snapshot: worldAssembler?.snapshot?.() || null,
         summary: null
       },
       tcpStream: new protocolApi.PacketStream(),
       udpStream: new protocolApi.PacketStream()
     };
-    const socket = connectGateway(connection, (data) => handleGatewayMessage(data, protocolSession));
+    bindControls(audio, renderer, () => closeSession(protocolSession, 1000, "User disconnected"));
+    const socket = connectGateway(
+      connection,
+      (data) => handleGatewayMessage(data, protocolSession),
+      (event, detail = {}) => updateSessionLifecycle(protocolSession, event, detail)
+    );
     protocolSession.socket = socket;
     bindChatComposer(socket, connection, protocolApi);
     bindKeyboard(socket, audio, (command = "", phase = "") => {
-      renderer.handleInput?.(command, phase);
-      // Until the renderer supplies a physics snapshot, this remains null for
-      // movement and shot commands. Local key handling still works and is ready
-      // for the authoritative state adapter without changing the wire format.
-      if (inputState.physicsReady && inputState.playerId !== null) {
-        inputState.order = Math.min(0x7fffffff, inputState.order + 1);
-        inputState.timestamp = (typeof performance !== "undefined" && performance.now ? performance.now() : Date.now()) / 1000;
-        return inputState;
+      if (!canSendSessionInput(protocolSession.lifecycle, command, phase)) {
+        return { command, phase };
       }
-      return { command, phase };
+      renderer.handleInput?.(command, phase);
+      if (!inputState.physicsReady || inputState.playerId === null) {
+        return { command, phase };
+      }
+      const now = Date.now() / 1000;
+      advanceClientPhysics(inputState, now);
+      inputState.order = boundedInteger(inputState.order + 1, 0, 0x7fffffff, 0);
+      inputState.timestamp = boundedNumber(now, 0, MAX_CLIENT_TIMESTAMP, inputState.timestamp);
+      const state: Record<string, any> = {
+        ...inputState,
+        position: inputState.position.slice() as [number, number, number],
+        velocity: inputState.velocity.slice() as [number, number, number]
+      };
+      if (command === "pause" && phase === "start") {
+        state.paused = !protocolSession.lifecycle.paused;
+      }
+      if (command === "fire" && phase === "start") {
+        if (resolveInputChannel(command, protocolSession.udpReady, connection.useUDP !== false) !== CHANNEL_UDP) {
+          return { command, phase };
+        }
+        state.firing = createFiringState(inputState, connection);
+        if (!state.firing) return { command, phase };
+      }
+      return state;
     }, (command = "") => {
       return resolveInputChannel(command, protocolSession.udpReady, connection.useUDP !== false);
+    }, (command = "", phase = "") => {
+      if (command === "restart" && phase === "end") {
+        updateSessionLifecycle(protocolSession, "restart-requested");
+      }
+      if (command === "exit" && phase === "start") {
+        closeSession(protocolSession, 1000, "Client requested exit");
+      }
     });
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("./service-worker.js", { scope: "./" }).catch(() => {
@@ -990,6 +1492,13 @@ SOFTWARE.
     CONNECTION_KEY,
     AUDIO_ASSETS,
     createInputState,
+    createSessionLifecycle,
+    applySessionLifecycle,
+    resetClientPhysics,
+    sanitizePhysicsSnapshot,
+    advanceClientPhysics,
+    canSendSessionInput,
+    createFiringState,
     AudioEngine,
     decodeBridgeMessage,
     encodeBridgeMessage,
@@ -1000,7 +1509,10 @@ SOFTWARE.
     resolveInputChannel,
     acceptsServerOrder,
     bindKeyboard,
-    handleProtocolFollowUp
+    handleProtocolFollowUp,
+    applySessionProtocolResult,
+    closeSession,
+    finalizeSessionClose
   };
   document.addEventListener("DOMContentLoaded", init);
 })();

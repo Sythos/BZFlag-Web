@@ -67,12 +67,21 @@ function requireBefore(source, path, firstMarker, secondMarker) {
 const workflows = new Map();
 for (const name of requiredWorkflows) workflows.set(name, await readWorkflow(name));
 
+for (const script of [
+  ".github/scripts/check-functional-gates.mjs",
+  ".github/scripts/check-toolchain-versions.mjs",
+  ".github/scripts/verify-release-artifacts.mjs",
+]) {
+  if (!(await exists(script))) failures.push(`${script}: required release gate script is missing`);
+}
+
 for (const [name, source] of workflows) {
   const path = join(workflowDirectory, name);
   for (const [lineNumber, line] of source.split(/\r?\n/).entries()) {
     const match = line.match(/^\s*uses:\s*([^\s#]+)(?:\s+#.*)?$/);
     if (!match) continue;
     const reference = match[1];
+    if (reference.startsWith("./.github/workflows/")) continue;
     if (!/@[0-9a-f]{40}$/i.test(reference)) {
       failures.push(`${path}:${lineNumber + 1}: action reference must use a full commit SHA: ${reference}`);
     }
@@ -97,10 +106,12 @@ const ci = workflows.get("ci.yml") || "";
 requireMarker(ci, ".github/workflows/ci.yml", "npm ci --prefix");
 requireMarker(ci, ".github/workflows/ci.yml", "node-version: 26.7.0");
 requireMarker(ci, ".github/workflows/ci.yml", "node .github/scripts/check-runtime-versions.mjs");
+requireMarker(ci, ".github/workflows/ci.yml", "node .github/scripts/check-toolchain-versions.mjs --check-latest");
 requireMarker(ci, ".github/workflows/ci.yml", "npm run typecheck --prefix server");
 requireMarker(ci, ".github/workflows/ci.yml", "npm run typecheck --prefix client");
 requireMarker(ci, ".github/workflows/ci.yml", "npm test --prefix server");
 requireMarker(ci, ".github/workflows/ci.yml", "npm test --prefix client");
+requireMarker(ci, ".github/workflows/ci.yml", "node .github/scripts/check-functional-gates.mjs");
 requireMarker(ci, ".github/workflows/ci.yml", "node .github/scripts/check-readmes.mjs");
 requireMarker(ci, ".github/workflows/ci.yml", "browser-e2e:");
 requireMarker(ci, ".github/workflows/ci.yml", "run-browser-e2e.mjs");
@@ -117,9 +128,13 @@ requireMarker(container, ".github/workflows/container.yml", "context: server");
 requireMarker(container, ".github/workflows/container.yml", "file: server/Dockerfile");
 requireMarker(container, ".github/workflows/container.yml", "IMAGE_NAME: ghcr.io/sythos/bzflag-web-server");
 requireMarker(container, ".github/workflows/container.yml", "validate-docker-context.mjs");
+requireMarker(container, ".github/workflows/container.yml", "node .github/scripts/check-toolchain-versions.mjs --check-latest");
 requireMarker(container, ".github/workflows/container.yml", "push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}");
 requireMarker(container, ".github/workflows/container.yml", "load: ${{ github.event_name != 'push' }}");
 requireMarker(container, ".github/workflows/container.yml", "if: github.event_name != 'push'");
+requireMarker(container, ".github/workflows/container.yml", "docker run --detach");
+requireMarker(container, ".github/workflows/container.yml", "/healthz");
+requireMarker(container, ".github/workflows/container.yml", '"status":"ok"');
 requireBefore(container, ".github/workflows/container.yml", "validate-docker-context.mjs", "docker/build-push-action@");
 if (/push:\s*\$\{\{\s*github\.event_name\s*!=\s*'pull_request'\s*\}\}/.test(container)) {
   failures.push(".github/workflows/container.yml: image publishing must be limited to the protected main push event");
@@ -132,10 +147,14 @@ requireMarker(release, ".github/workflows/release.yml", "docker/metadata-action@
 requireMarker(release, ".github/workflows/release.yml", "docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a");
 requireMarker(workflows.get("compliance.yml") || "", ".github/workflows/compliance.yml", "node-version: 26.7.0");
 requireMarker(workflows.get("compliance.yml") || "", ".github/workflows/compliance.yml", "node .github/scripts/check-runtime-versions.mjs");
+requireMarker(workflows.get("compliance.yml") || "", ".github/workflows/compliance.yml", "node .github/scripts/check-toolchain-versions.mjs --check-latest");
 requireMarker(workflows.get("compliance.yml") || "", ".github/workflows/compliance.yml", "node .github/scripts/check-readmes.mjs");
 requireMarker(release, ".github/workflows/release.yml", "node-version: 26.7.0");
 requireMarker(release, ".github/workflows/release.yml", "node .github/scripts/check-runtime-versions.mjs");
+requireMarker(release, ".github/workflows/release.yml", "node .github/scripts/check-toolchain-versions.mjs --check-latest");
 requireMarker(release, ".github/workflows/release.yml", "needs:\n      - validate-ref\n      - verify");
+requireMarker(release, ".github/workflows/release.yml", "uses: ./.github/workflows/security.yml");
+requireMarker(release, ".github/workflows/release.yml", "ref: ${{ needs.validate-ref.outputs.release_tag }}");
 requireMarker(release, ".github/workflows/release.yml", "context: server");
 requireMarker(release, ".github/workflows/release.yml", "file: server/Dockerfile");
 requireMarker(release, ".github/workflows/release.yml", "IMAGE_NAME: ghcr.io/sythos/bzflag-web-server");
@@ -143,6 +162,10 @@ requireMarker(release, ".github/workflows/release.yml", "node --check");
 requireMarker(release, ".github/workflows/release.yml", "node .github/scripts/check-readmes.mjs");
 requireMarker(release, ".github/workflows/release.yml", "validate-docker-context.mjs");
 requireMarker(release, ".github/workflows/release.yml", "run-browser-e2e.mjs");
+requireMarker(release, ".github/workflows/release.yml", "node .github/scripts/check-functional-gates.mjs");
+requireMarker(release, ".github/workflows/release.yml", "node .github/scripts/verify-release-artifacts.mjs --release-tag");
+requireMarker(release, ".github/workflows/release.yml", "Build and smoke single-architecture gateway image");
+requireMarker(release, ".github/workflows/release.yml", "npm audit --prefix");
 requireMarker(release, ".github/workflows/release.yml", "playwright@1.62.1");
 requireMarker(release, ".github/workflows/release.yml", "playwright install --dry-run --with-deps --only-shell chromium");
 requireMarker(release, ".github/workflows/release.yml", "timeout 12m npx --prefix");
@@ -153,10 +176,19 @@ requireMarker(release, ".github/workflows/release.yml", "gh release view \"$RELE
 requireMarker(release, ".github/workflows/release.yml", "--repo \"$GITHUB_REPOSITORY\" --clobber");
 requireMarker(release, ".github/workflows/release.yml", "zip -X -q -r \"bzflag-web-client-${version}.zip\"");
 requireMarker(release, ".github/workflows/release.yml", "zip -X -q -r \"bzflag-web-server-${version}.zip\"");
+requireMarker(release, ".github/workflows/release.yml", "node .github/scripts/verify-release-artifacts.mjs");
 const security = workflows.get("security.yml") || "";
+requireMarker(security, ".github/workflows/security.yml", 'tags:\n      - "v*.*.*"');
 requireMarker(security, ".github/workflows/security.yml", "github/codeql-action/init@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd");
 requireMarker(security, ".github/workflows/security.yml", "github/codeql-action/analyze@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd");
 requireMarker(security, ".github/workflows/security.yml", "github/codeql-action/upload-sarif@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd");
+requireMarker(security, ".github/workflows/security.yml", "actions/dependency-review-action@");
+requireMarker(security, ".github/workflows/security.yml", "gitleaks/gitleaks-action@");
+requireMarker(security, ".github/workflows/security.yml", "aquasecurity/trivy-action@");
+const workflowLint = workflows.get("workflow-lint.yml") || "";
+requireMarker(workflowLint, ".github/workflows/workflow-lint.yml", "node .github/scripts/check-toolchain-versions.mjs --check-latest");
+requireMarker(workflowLint, ".github/workflows/workflow-lint.yml", "actionlint -color");
+requireMarker(workflowLint, ".github/workflows/workflow-lint.yml", "zizmor");
 if (/find release -maxdepth 1 -type f[^\n]*>\s*release\/SHA256SUMS\.txt/.test(release)
   && !/!\s*-name\s+SHA256SUMS\.txt/.test(release)) {
   failures.push(".github/workflows/release.yml: SHA256SUMS.txt must not hash itself");

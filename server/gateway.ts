@@ -432,6 +432,15 @@ function normalizeServer(server: any, index: number, allowPrivateAddresses = fal
   if (kind !== 'official' && kind !== 'custom') {
     throw new Error(`servers[${index}].kind must be official or custom`);
   }
+  // The native BZFS listener owns both transports on the configured game
+  // port. Keeping the UDP port tied to that same target port prevents a
+  // verified TCP service from being used as a pretext for forwarding UDP to a
+  // second, unrelated service on the same host. Local integration fixtures
+  // may opt into the explicit private-address escape hatch and use distinct
+  // ephemeral TCP/UDP ports.
+  if (!allowPrivateAddresses && udpPort !== port) {
+    throw new Error(`servers[${index}].udpPort must match port for non-local targets`);
+  }
   const protocolVersion = String(server.protocolVersion ?? DEFAULT_BZFLAG_PROTOCOL);
   if (!/^\d{4}$/.test(protocolVersion)) {
     throw new Error(`servers[${index}].protocolVersion must contain exactly four digits`);

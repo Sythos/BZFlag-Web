@@ -144,6 +144,11 @@ jobs:
       - name: Verify runtime and locked dependency versions
         run: node .github/scripts/check-runtime-versions.mjs
 
+      - name: Check latest stable toolchain and documented pins
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node .github/scripts/check-toolchain-versions.mjs --check-latest
+
       - name: Fetch base branch for the ancestry gate
         run: git fetch --no-tags origin "+$RELEASE_BASE_BRANCH:refs/remotes/origin/$RELEASE_BASE_BRANCH"
 
@@ -204,6 +209,17 @@ jobs:
             npm test --prefix "$directory"
           done
 
+      - name: Enforce protocol, world, game, renderer, PWA and gateway gates
+        run: node .github/scripts/check-functional-gates.mjs
+
+      - name: Audit release production dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          for directory in client server; do
+            npm audit --prefix "$directory" --omit=dev --audit-level=high
+          done
+
       - name: Run compiled JavaScript syntax checks
         shell: bash
         run: |
@@ -233,11 +249,24 @@ jobs:
       - name: Validate workflow structure and release invariants
         run: node .github/scripts/check-workflows.mjs
 
+  security:
+    name: Release security gate
+    needs: validate-ref
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    uses: ./.github/workflows/security.yml
+    with:
+      ref: ${{ needs.validate-ref.outputs.release_tag }}
+    secrets: inherit
+
   package:
     name: Build release packages
     needs:
       - validate-ref
       - verify
+      - security
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -257,6 +286,11 @@ jobs:
         with:
           node-version: 26.7.0
           check-latest: true
+
+      - name: Check latest stable toolchain and documented pins
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node .github/scripts/check-toolchain-versions.mjs --check-latest
 
       - name: Build release directories
         shell: bash
@@ -287,6 +321,8 @@ jobs:
               exit 1
             fi
           done
+
+          node .github/scripts/check-functional-gates.mjs
 
           cp -a client/. "release/bzflag-web-client-${version}/"
           cp -a server/. "release/bzflag-web-server-${version}/"
@@ -332,6 +368,7 @@ jobs:
           set -euo pipefail
           node .github/scripts/release-metadata.mjs --release-tag "$RELEASE_TAG" --release-dir release
           find release -maxdepth 1 -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > release/SHA256SUMS.txt
+          node .github/scripts/verify-release-artifacts.mjs --release-tag "$RELEASE_TAG" --release-dir release
 
       - name: Upload release bundle for publication
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -347,6 +384,7 @@ jobs:
       - validate-ref
       - package
       - image
+      - security
     if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && startsWith(inputs.tag, 'v'))
     runs-on: ubuntu-24.04
     environment: release
@@ -356,11 +394,20 @@ jobs:
       id-token: write
       attestations: write
     steps:
+      - name: Checkout release source for verification scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.validate-ref.outputs.release_tag }}
+          persist-credentials: false
+
       - name: Download release bundle
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-${{ env.RELEASE_TAG }}
           path: release
+
+      - name: Verify release bundle closure, SBOM and provenance
+        run: node .github/scripts/verify-release-artifacts.mjs --release-tag "$RELEASE_TAG" --release-dir release
 
       - name: Attest client package
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
@@ -458,6 +505,27 @@ jobs:
             type=semver,pattern={{version}},value=${{ env.RELEASE_TAG }}
             type=semver,pattern={{major}}.{{minor}},value=${{ env.RELEASE_TAG }}
             type=raw,value=latest
+
+      - name: Build and smoke single-architecture gateway image
+        shell: bash
+        run: |
+          set -euo pipefail
+          smoke_tag="${IMAGE_NAME}:release-smoke-${GITHUB_RUN_ID}"
+          docker build --pull --tag "$smoke_tag" --file server/Dockerfile server
+          container_id="$(docker run --detach --publish 18080:8080 "$smoke_tag")"
+          cleanup() {
+            docker rm --force "$container_id" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          for attempt in {1..30}; do
+            if curl --fail --silent --show-error http://127.0.0.1:18080/healthz >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs "$container_id" >&2 || true
+          echo "Gateway container health check did not become ready." >&2
+          exit 1
 
       - name: Build and publish gateway image
         id: build

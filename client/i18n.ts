@@ -78,6 +78,10 @@ SOFTWARE.
     rendererHint: "WebGPU first, with a WebGL2 fallback for modern browsers.",
     offlineReady: "Installable shell",
     offlineHint: "The app shell can be cached as a PWA on HTTPS or localhost.",
+    installApp: "Install app",
+    appInstalled: "The app is installed on this device.",
+    installDismissed: "Installation was dismissed.",
+    installUnavailable: "App installation is not available in this browser yet.",
     playerSession: "Player session",
     playerDetails: "Player details",
     nickname: "Nickname",
@@ -168,22 +172,22 @@ SOFTWARE.
   /* The upstream BZFlag data/l10n locale list is kept intact. Missing strings
      intentionally fall back to English while each locale pack is expanded. */
   const LOCALE_PACKS: Record<string, TranslationPack> = {
-    cs_CZ: { language: "Čeština", connect: "Připojit", disconnect: "Odpojit", nickname: "Přezdívka", server: "Server", password: "Heslo", team: "Tým", motto: "Motto", score: "Skóre", kills: "Zabití", health: "Zdraví" },
-    da: { language: "Dansk", connect: "Forbind", disconnect: "Afbryd", nickname: "Kaldenavn", server: "Server", password: "Adgangskode", team: "Hold", motto: "Motto", score: "Point", kills: "Drab", health: "Helbred" },
-    de: { language: "Deutsch", connect: "Verbinden", disconnect: "Trennen", nickname: "Spitzname", server: "Server", password: "Passwort", team: "Team", motto: "Motto", score: "Punktzahl", kills: "Abschüsse", health: "Gesundheit" },
-    en_US_l33t: { language: "English (l33t)", connect: "C0nn3ct", disconnect: "D1sc0nn3ct", nickname: "N1ckn4m3", server: "S3rv3r", password: "P4ssw0rd", team: "T34m", score: "Sc0r3", kills: "K1lls", health: "H34lth" },
-    en_US_redneck: { language: "English (redneck)", connect: "Hook up", disconnect: "Unhook", nickname: "Handle", server: "Server", password: "Passcode", team: "Team", score: "Score", kills: "Takedowns", health: "Health" },
-    es: { language: "Español", connect: "Conectar", disconnect: "Desconectar", nickname: "Apodo", server: "Servidor", password: "Contraseña", team: "Equipo", motto: "Lema", score: "Puntuación", kills: "Bajas", health: "Salud" },
-    fr: { language: "Français", connect: "Connexion", disconnect: "Déconnexion", nickname: "Pseudonyme", server: "Serveur", password: "Mot de passe", team: "Équipe", motto: "Devise", score: "Score", kills: "Éliminations", health: "Santé" },
-    it: { language: "Italiano", connect: "Connetti", disconnect: "Disconnetti", nickname: "Nickname", server: "Server", password: "Password", team: "Squadra", motto: "Motto", score: "Punteggio", kills: "Uccisioni", health: "Salute" },
-    kg: { language: "Kyrgyz", connect: "Connect", disconnect: "Disconnect", nickname: "Nickname", server: "Server", password: "Password", team: "Team", motto: "Motto" },
-    lt: { language: "Lietuvių", connect: "Prisijungti", disconnect: "Atsijungti", nickname: "Slapyvardis", server: "Serveris", password: "Slaptažodis", team: "Komanda", motto: "Devizas", score: "Taškai", kills: "Nužudymai", health: "Sveikata" },
-    nl: { language: "Nederlands", connect: "Verbinden", disconnect: "Verbinding verbreken", nickname: "Bijnaam", server: "Server", password: "Wachtwoord", team: "Team", motto: "Motto", score: "Score", kills: "Kills", health: "Gezondheid" },
-    pt: { language: "Português", connect: "Ligar", disconnect: "Desligar", nickname: "Apelido", server: "Servidor", password: "Senha", team: "Equipe", motto: "Lema", score: "Pontuação", kills: "Abates", health: "Saúde" },
-    ru: { language: "Русский", connect: "Подключить", disconnect: "Отключить", nickname: "Имя", server: "Сервер", password: "Пароль", team: "Команда", motto: "Девиз", score: "Счёт", kills: "Убийства", health: "Здоровье" },
-    sk: { language: "Slovenčina", connect: "Pripojiť", disconnect: "Odpojiť", nickname: "Prezývka", server: "Server", password: "Heslo", team: "Tím", motto: "Motto", score: "Skóre", kills: "Zabitia", health: "Zdravie" },
-    sv: { language: "Svenska", connect: "Anslut", disconnect: "Koppla från", nickname: "Smeknamn", server: "Server", password: "Lösenord", team: "Lag", motto: "Motto", score: "Poäng", kills: "Dödade", health: "Hälsa" },
-    xx: { language: "Experimental", connect: "Connect", disconnect: "Disconnect", nickname: "Nickname", server: "Server", password: "Password", team: "Team", motto: "Motto" }
+    cs_CZ: { language: "Čeština", connect: "Připojit", disconnect: "Odpojit", nickname: "Přezdívka", server: "Server", password: "Heslo", team: "Tým", motto: "Motto", score: "Skóre", kills: "Zabití", health: "Zdraví", installApp: "Instalovat aplikaci" },
+    da: { language: "Dansk", connect: "Forbind", disconnect: "Afbryd", nickname: "Kaldenavn", server: "Server", password: "Adgangskode", team: "Hold", motto: "Motto", score: "Point", kills: "Drab", health: "Helbred", installApp: "Installér appen" },
+    de: { language: "Deutsch", connect: "Verbinden", disconnect: "Trennen", nickname: "Spitzname", server: "Server", password: "Passwort", team: "Team", motto: "Motto", score: "Punktzahl", kills: "Abschüsse", health: "Gesundheit", installApp: "App installieren" },
+    en_US_l33t: { language: "English (l33t)", connect: "C0nn3ct", disconnect: "D1sc0nn3ct", nickname: "N1ckn4m3", server: "S3rv3r", password: "P4ssw0rd", team: "T34m", score: "Sc0r3", kills: "K1lls", health: "H34lth", installApp: "1nst4ll 4pp" },
+    en_US_redneck: { language: "English (redneck)", connect: "Hook up", disconnect: "Unhook", nickname: "Handle", server: "Server", password: "Passcode", team: "Team", score: "Score", kills: "Takedowns", health: "Health", installApp: "Install app" },
+    es: { language: "Español", connect: "Conectar", disconnect: "Desconectar", nickname: "Apodo", server: "Servidor", password: "Contraseña", team: "Equipo", motto: "Lema", score: "Puntuación", kills: "Bajas", health: "Salud", installApp: "Instalar aplicación" },
+    fr: { language: "Français", connect: "Connexion", disconnect: "Déconnexion", nickname: "Pseudonyme", server: "Serveur", password: "Mot de passe", team: "Équipe", motto: "Devise", score: "Score", kills: "Éliminations", health: "Santé", installApp: "Installer l’application" },
+    it: { language: "Italiano", connect: "Connetti", disconnect: "Disconnetti", nickname: "Nickname", server: "Server", password: "Password", team: "Squadra", motto: "Motto", score: "Punteggio", kills: "Uccisioni", health: "Salute", installApp: "Installa app" },
+    kg: { language: "Kyrgyz", connect: "Connect", disconnect: "Disconnect", nickname: "Nickname", server: "Server", password: "Password", team: "Team", motto: "Motto", installApp: "Install app" },
+    lt: { language: "Lietuvių", connect: "Prisijungti", disconnect: "Atsijungti", nickname: "Slapyvardis", server: "Serveris", password: "Slaptažodis", team: "Komanda", motto: "Devizas", score: "Taškai", kills: "Nužudymai", health: "Sveikata", installApp: "Įdiegti programėlę" },
+    nl: { language: "Nederlands", connect: "Verbinden", disconnect: "Verbinding verbreken", nickname: "Bijnaam", server: "Server", password: "Wachtwoord", team: "Team", motto: "Motto", score: "Score", kills: "Kills", health: "Gezondheid", installApp: "App installeren" },
+    pt: { language: "Português", connect: "Ligar", disconnect: "Desligar", nickname: "Apelido", server: "Servidor", password: "Senha", team: "Equipe", motto: "Lema", score: "Pontuação", kills: "Abates", health: "Saúde", installApp: "Instalar aplicação" },
+    ru: { language: "Русский", connect: "Подключить", disconnect: "Отключить", nickname: "Имя", server: "Сервер", password: "Пароль", team: "Команда", motto: "Девиз", score: "Счёт", kills: "Убийства", health: "Здоровье", installApp: "Установить приложение" },
+    sk: { language: "Slovenčina", connect: "Pripojiť", disconnect: "Odpojiť", nickname: "Prezývka", server: "Server", password: "Heslo", team: "Tím", motto: "Motto", score: "Skóre", kills: "Zabitia", health: "Zdravie", installApp: "Nainštalovať aplikáciu" },
+    sv: { language: "Svenska", connect: "Anslut", disconnect: "Koppla från", nickname: "Smeknamn", server: "Server", password: "Lösenord", team: "Lag", motto: "Motto", score: "Poäng", kills: "Dödade", health: "Hälsa", installApp: "Installera appen" },
+    xx: { language: "Experimental", connect: "Connect", disconnect: "Disconnect", nickname: "Nickname", server: "Server", password: "Password", team: "Team", motto: "Motto", installApp: "Install app" }
   };
 
   const CATALOG_CACHE = new Map<string, Catalog>();
@@ -222,9 +226,18 @@ SOFTWARE.
         if (msgid !== null || msgstr !== null) commit();
         msgid = unquotePo(line.slice(6));
         active = "msgid";
+      } else if (line.startsWith("msgid_plural ")) {
+        active = null;
       } else if (line.startsWith("msgstr ")) {
         msgstr = unquotePo(line.slice(7));
         active = "msgstr";
+      } else if (line.startsWith("msgstr[")) {
+        if (msgstr === null && line.startsWith("msgstr[0] ")) {
+          msgstr = unquotePo(line.slice(9));
+          active = "msgstr";
+        } else {
+          active = null;
+        }
       } else if (line.trim().startsWith('"') && active) {
         const value = unquotePo(line.trim());
         if (active === "msgid") msgid = `${msgid ?? ""}${value}`;
@@ -263,7 +276,8 @@ SOFTWARE.
       return DEFAULT_LOCALE;
     }
     const lower = String(locale).toLowerCase();
-    const match = SUPPORTED_LOCALES.find((candidate) => candidate.toLowerCase() === lower);
+    const normalised = lower.replaceAll("-", "_");
+    const match = SUPPORTED_LOCALES.find((candidate) => candidate.toLowerCase() === lower || candidate.toLowerCase() === normalised);
     if (match) {
       return match;
     }

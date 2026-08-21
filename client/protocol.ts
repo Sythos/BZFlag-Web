@@ -57,8 +57,11 @@
   const MSG_REJECT = 0x726a;
   const MSG_REMOVE_PLAYER = 0x7270;
   const MSG_SHOT_BEGIN = 0x7362;
+  const MSG_SCORE = 0x7363;
   const MSG_SHOT_END = 0x7365;
+  const MSG_SCORE_OVER = 0x736f;
   const MSG_SUPER_KILL = 0x736b;
+  const MSG_TIME_UPDATE = 0x746f;
   const MSG_TELEPORT = 0x7470;
   const MSG_TRANSFER_FLAG = 0x7466;
   const MSG_TEAM_UPDATE = 0x7475;
@@ -115,6 +118,10 @@
   const ALIVE_PAYLOAD_BYTES = 1 + 12 + 4;
   const FLAG_PAYLOAD_BYTES = 55;
   const FLAG_UPDATE_HEADER_BYTES = 2;
+  const TEAM_UPDATE_HEADER_BYTES = 1;
+  const TEAM_RECORD_BYTES = 2 + 2 + 2 + 2;
+  const SCORE_UPDATE_HEADER_BYTES = 1;
+  const SCORE_RECORD_BYTES = 1 + 2 + 2 + 2;
   // A client-to-server MsgMessage contains only the destination and a fixed
   // message buffer.  A server-to-client message adds the source and message
   // type bytes to that payload.  Keep the two layouts distinct: using the
@@ -124,10 +131,21 @@
   const MESSAGE_SERVER_HEADER_BYTES = 3;
   const MESSAGE_PAYLOAD_BYTES = MESSAGE_SERVER_HEADER_BYTES + MESSAGE_BYTES;
   const SHOT_END_PAYLOAD_BYTES = 1 + 2 + 2;
+  const KILLED_OUTGOING_PAYLOAD_BYTES = 1 + 2 + 2 + 2;
+  const KILLED_SERVER_PAYLOAD_BYTES = 1 + KILLED_OUTGOING_PAYLOAD_BYTES;
+  const KILLED_PHYSICS_DRIVER_BYTES = 4;
   const CAPTURE_FLAG_PAYLOAD_BYTES = 2;
+  const CAPTURE_FLAG_SERVER_PAYLOAD_BYTES = 1 + 2 + 2;
+  const FLAG_EVENT_SERVER_PAYLOAD_BYTES = 1 + 2 + FLAG_PAYLOAD_BYTES;
   const TRANSFER_FLAG_PAYLOAD_BYTES = 2;
+  const TRANSFER_FLAG_SERVER_PAYLOAD_BYTES = 2 + FLAG_PAYLOAD_BYTES;
   const TELEPORT_PAYLOAD_BYTES = 4;
+  const TELEPORT_SERVER_PAYLOAD_BYTES = 1 + TELEPORT_PAYLOAD_BYTES;
   const BOOLEAN_PAYLOAD_BYTES = 1;
+  const BOOLEAN_SERVER_PAYLOAD_BYTES = 1 + BOOLEAN_PAYLOAD_BYTES;
+  const NEW_RABBIT_SERVER_PAYLOAD_BYTES = 1;
+  const SCORE_OVER_PAYLOAD_BYTES = 1 + 2;
+  const TIME_UPDATE_PAYLOAD_BYTES = 4;
   const PLAYER_UPDATE_FIXED_BYTES = 4 + 1 + 4 + 2 + 12 + 12 + 4 + 4;
   const FIRE_PAYLOAD_BYTES = 4 + 1 + 2 + 12 + 12 + 4 + 2 + 2 + 4;
   const GAME_SETTINGS_PAYLOAD_BYTES = 30;
@@ -139,6 +157,7 @@
   const SMALL_SCALE = 32766;
   const SMALL_MAX_VELOCITY = 0.01 * SMALL_SCALE;
   const SMALL_MAX_ANGULAR_VELOCITY = 0.001 * SMALL_SCALE;
+  const PHYSICS_DRIVER_DEATH = 0x7064;
 
   const encoder = new TextEncoder();
   const decoder = new TextDecoder();
@@ -170,6 +189,10 @@
 
   function boundedPlayerId(value) {
     return boundedInteger(value, 0, NO_PLAYER - 1);
+  }
+
+  function boundedPlayerOrNoPlayer(value) {
+    return boundedInteger(value, 0, NO_PLAYER);
   }
 
   function resolveTeam(value) {
@@ -209,6 +232,36 @@
     target.set(bytes.subarray(0, copyLength));
   }
 
+  function normalizeFlagAbbreviation(value) {
+    const text = String(value ?? "").trim();
+    if (text.length > 2 || !/^[A-Za-z*]{0,2}$/.test(text)) return null;
+    return text.toUpperCase();
+  }
+
+  function writeFlagAbbreviation(view, offset, value) {
+    const abbreviation = normalizeFlagAbbreviation(value);
+    if (abbreviation === null) return false;
+    const bytes = encoder.encode(abbreviation);
+    view.setUint8(offset, bytes[0] || 0);
+    view.setUint8(offset + 1, bytes[1] || 0);
+    return true;
+  }
+
+  function validFlagAbbreviation(payload, offset) {
+    if (!packetHasBytes(payload, offset, 2)) return false;
+    const first = payload[offset];
+    const second = payload[offset + 1];
+    const validByte = (value) => value === 0 || value === 0x2a ||
+      (value >= 0x41 && value <= 0x5a) || (value >= 0x61 && value <= 0x7a);
+    if (!validByte(first) || !validByte(second)) return false;
+    return first !== 0 || second === 0;
+  }
+
+  function decodeFlagType(payload, offset = 0) {
+    if (!validFlagAbbreviation(payload, offset)) return null;
+    return readFixedString(payload, offset, 2);
+  }
+
   function readFixedString(bytes, offset, length) {
     const end = Math.min(bytes.byteLength, offset + length);
     let zero = offset;
@@ -228,6 +281,41 @@
 
   function packetHasBytes(payload, offset, length) {
     return offset >= 0 && length >= 0 && offset + length <= payload.byteLength;
+  }
+
+  function decodeFlagRecord(payload, offset = 0) {
+    if (!packetHasBytes(payload, offset, FLAG_PAYLOAD_BYTES) || !validFlagAbbreviation(payload, offset)) return null;
+    const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+    const flagType = readFixedString(payload, offset, 2);
+    const status = view.getUint16(offset + 2);
+    const endurance = view.getUint16(offset + 4);
+    if (status > 5 || endurance > 2) return null;
+    const owner = view.getUint8(offset + 6);
+    const position = readVector(view, offset + 7);
+    if (!position) return null;
+    const launchPosition = readVector(view, position.offset);
+    if (!launchPosition) return null;
+    const landingPosition = readVector(view, launchPosition.offset);
+    if (!landingPosition) return null;
+    const flightTime = readPacketFloat(view, landingPosition.offset);
+    if (!flightTime) return null;
+    const flightEnd = readPacketFloat(view, flightTime.offset);
+    if (!flightEnd) return null;
+    const initialVelocity = readPacketFloat(view, flightEnd.offset);
+    if (!initialVelocity || initialVelocity.offset !== offset + FLAG_PAYLOAD_BYTES) return null;
+    return {
+      flagType,
+      status,
+      endurance,
+      owner,
+      position: position.value,
+      launchPosition: launchPosition.value,
+      landingPosition: landingPosition.value,
+      flightTime: flightTime.value,
+      flightEnd: flightEnd.value,
+      initialVelocity: initialVelocity.value,
+      offset: initialVelocity.offset
+    };
   }
 
   function encodePacket(code, payload = new Uint8Array()) {
@@ -615,6 +703,7 @@
   }
 
   function encodeDropFlag(position) {
+    if (!hasVector(position)) return null;
     const packet = new Uint8Array(12);
     writeVector(new DataView(packet.buffer), 0, position);
     return encodePacket(MSG_DROP_FLAG, packet);
@@ -653,7 +742,7 @@
 
   function encodeCaptureFlag(team) {
     const value = resolveTeam(team);
-    if (value === null) return null;
+    if (value === null || value < 0 || value >= 8) return null;
     const packet = new Uint8Array(CAPTURE_FLAG_PAYLOAD_BYTES);
     new DataView(packet.buffer).setUint16(0, value & 0xffff);
     return encodePacket(MSG_CAPTURE_FLAG, packet);
@@ -687,6 +776,27 @@
 
   function encodePause(paused) {
     return encodePacket(MSG_PAUSE, new Uint8Array([paused ? 1 : 0]));
+  }
+
+  function encodeKilled(killed = {}) {
+    const killer = boundedPlayerOrNoPlayer(killed.killer ?? killed.killerId);
+    const reason = boundedInteger(killed.reason, -0x8000, 0x7fff);
+    const shotId = boundedInteger(killed.shotId, -0x8000, 0x7fff);
+    const flagType = normalizeFlagAbbreviation(killed.flag ?? killed.flagType ?? "");
+    if (killer === null || reason === null || shotId === null || flagType === null) return null;
+    const hasPhysicsDriver = reason === PHYSICS_DRIVER_DEATH;
+    const payload = new Uint8Array(KILLED_OUTGOING_PAYLOAD_BYTES + (hasPhysicsDriver ? KILLED_PHYSICS_DRIVER_BYTES : 0));
+    const view = new DataView(payload.buffer);
+    view.setUint8(0, killer);
+    view.setInt16(1, reason);
+    view.setInt16(3, shotId);
+    if (!writeFlagAbbreviation(view, 5, flagType)) return null;
+    if (hasPhysicsDriver) {
+      const physicsDriver = boundedInteger(killed.physicsDriver ?? killed.phydrv, -0x80000000, 0x7fffffff);
+      if (physicsDriver === null) return null;
+      view.setInt32(KILLED_OUTGOING_PAYLOAD_BYTES, physicsDriver);
+    }
+    return encodePacket(MSG_KILLED, payload);
   }
 
   function messageTargetForCommand(command, state) {
@@ -744,6 +854,7 @@
       return encodeTransferFlag(localPlayerId, state.to ?? state.targetPlayerId);
     }
     if (command === "shot-end" && phase === "start") return encodeShotEnd(state);
+    if ((command === "killed" || command === "die") && phase === "start") return encodeKilled(state);
     // Jump, scoreboard, chat opener and menu actions remain local UI/physics
     // actions. Their native wire commands are emitted only after a complete
     // stateful payload is available.
@@ -877,9 +988,167 @@
 
   function decodeShotEnd(packetPayload) {
     const payload = toUint8Array(packetPayload);
-    if (payload.byteLength < SHOT_END_PAYLOAD_BYTES) return null;
+    if (payload.byteLength !== SHOT_END_PAYLOAD_BYTES) return null;
     const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
     return { playerId: view.getUint8(0), shotId: view.getInt16(1), reason: view.getUint16(3) };
+  }
+
+  function decodeTeamUpdate(packetPayload) {
+    const payload = toUint8Array(packetPayload);
+    if (payload.byteLength < TEAM_UPDATE_HEADER_BYTES) return null;
+    const count = payload[0];
+    if (count > 8 || payload.byteLength !== TEAM_UPDATE_HEADER_BYTES + count * TEAM_RECORD_BYTES) return null;
+    const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+    const teams = [];
+    let offset = TEAM_UPDATE_HEADER_BYTES;
+    for (let index = 0; index < count; index += 1) {
+      const team = view.getUint16(offset);
+      if (team >= 8) return null;
+      teams.push({
+        team,
+        size: view.getUint16(offset + 2),
+        wins: view.getUint16(offset + 4),
+        losses: view.getUint16(offset + 6)
+      });
+      offset += TEAM_RECORD_BYTES;
+    }
+    return { count, teams, bytes: offset };
+  }
+
+  function decodeKilled(packetPayload) {
+    const payload = toUint8Array(packetPayload);
+    if (payload.byteLength !== KILLED_SERVER_PAYLOAD_BYTES && payload.byteLength !== KILLED_SERVER_PAYLOAD_BYTES + KILLED_PHYSICS_DRIVER_BYTES) return null;
+    const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+    const victim = boundedPlayerId(payload[0]);
+    const killer = boundedPlayerOrNoPlayer(payload[1]);
+    const reason = view.getInt16(2);
+    const shotId = view.getInt16(4);
+    const flagType = decodeFlagType(payload, 6);
+    if (victim === null || killer === null || flagType === null) return null;
+    const hasPhysicsDriver = reason === PHYSICS_DRIVER_DEATH;
+    if (hasPhysicsDriver !== (payload.byteLength === KILLED_SERVER_PAYLOAD_BYTES + KILLED_PHYSICS_DRIVER_BYTES)) return null;
+    const result = {
+      victim,
+      killer,
+      reason,
+      shotId,
+      flagType,
+      bytes: KILLED_SERVER_PAYLOAD_BYTES
+    };
+    if (hasPhysicsDriver) {
+      result.physicsDriver = view.getInt32(KILLED_SERVER_PAYLOAD_BYTES);
+      result.bytes += KILLED_PHYSICS_DRIVER_BYTES;
+    }
+    if (result.bytes !== payload.byteLength) return null;
+    return result;
+  }
+
+  function decodeGrabFlag(packetPayload) {
+    const payload = toUint8Array(packetPayload);
+    if (payload.byteLength !== FLAG_EVENT_SERVER_PAYLOAD_BYTES) return null;
+    const playerId = boundedPlayerId(payload[0]);
+    if (playerId === null) return null;
+    const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+    const flagIndex = view.getUint16(1);
+    const flag = decodeFlagRecord(payload, 3);
+    if (!flag || flag.offset !== payload.byteLength) return null;
+    return { playerId, flagIndex, ...flag, bytes: flag.offset };
+  }
+
+  function decodeDropFlag(packetPayload) {
+    const decoded = decodeGrabFlag(packetPayload);
+    return decoded ? { ...decoded } : null;
+  }
+
+  function decodeCaptureFlag(packetPayload) {
+    const payload = toUint8Array(packetPayload);
+    if (payload.byteLength !== CAPTURE_FLAG_SERVER_PAYLOAD_BYTES) return null;
+    const playerId = boundedPlayerId(payload[0]);
+    const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+    const flagIndex = view.getUint16(1);
+    const team = view.getUint16(3);
+    if (playerId === null || team >= 8) return null;
+    return { playerId, flagIndex, team, bytes: payload.byteLength };
+  }
+
+  function decodeTeleport(packetPayload) {
+    const payload = toUint8Array(packetPayload);
+    if (payload.byteLength !== TELEPORT_SERVER_PAYLOAD_BYTES) return null;
+    const playerId = boundedPlayerId(payload[0]);
+    const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+    if (playerId === null) return null;
+    return { playerId, from: view.getUint16(1), to: view.getUint16(3), bytes: payload.byteLength };
+  }
+
+  function decodeTransferFlag(packetPayload) {
+    const payload = toUint8Array(packetPayload);
+    if (payload.byteLength !== TRANSFER_FLAG_SERVER_PAYLOAD_BYTES) return null;
+    const from = boundedPlayerId(payload[0]);
+    const to = boundedPlayerId(payload[1]);
+    const flag = decodeFlagRecord(payload, 2);
+    if (from === null || to === null || !flag || flag.offset !== payload.byteLength) return null;
+    return { from, to, ...flag, bytes: flag.offset };
+  }
+
+  function decodePause(packetPayload) {
+    const payload = toUint8Array(packetPayload);
+    if (payload.byteLength !== BOOLEAN_SERVER_PAYLOAD_BYTES) return null;
+    const playerId = boundedPlayerId(payload[0]);
+    if (playerId === null || (payload[1] !== 0 && payload[1] !== 1)) return null;
+    return { playerId, paused: payload[1] === 1, bytes: payload.byteLength };
+  }
+
+  function decodeAutoPilot(packetPayload) {
+    const payload = toUint8Array(packetPayload);
+    if (payload.byteLength !== BOOLEAN_SERVER_PAYLOAD_BYTES) return null;
+    const playerId = boundedPlayerId(payload[0]);
+    if (playerId === null || (payload[1] !== 0 && payload[1] !== 1)) return null;
+    return { playerId, enabled: payload[1] === 1, bytes: payload.byteLength };
+  }
+
+  function decodeNewRabbit(packetPayload) {
+    const payload = toUint8Array(packetPayload);
+    if (payload.byteLength !== NEW_RABBIT_SERVER_PAYLOAD_BYTES) return null;
+    const playerId = boundedPlayerId(payload[0]);
+    return playerId === null ? null : { playerId, bytes: payload.byteLength };
+  }
+
+  function decodeScore(packetPayload) {
+    const payload = toUint8Array(packetPayload);
+    if (payload.byteLength < SCORE_UPDATE_HEADER_BYTES) return null;
+    const count = payload[0];
+    if (payload.byteLength !== SCORE_UPDATE_HEADER_BYTES + count * SCORE_RECORD_BYTES) return null;
+    const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+    const scores = [];
+    let offset = SCORE_UPDATE_HEADER_BYTES;
+    for (let index = 0; index < count; index += 1) {
+      const playerId = boundedPlayerId(payload[offset]);
+      if (playerId === null) return null;
+      scores.push({
+        playerId,
+        wins: view.getUint16(offset + 1),
+        losses: view.getUint16(offset + 3),
+        tks: view.getUint16(offset + 5)
+      });
+      offset += SCORE_RECORD_BYTES;
+    }
+    return { count, scores, bytes: offset };
+  }
+
+  function decodeScoreOver(packetPayload) {
+    const payload = toUint8Array(packetPayload);
+    if (payload.byteLength !== SCORE_OVER_PAYLOAD_BYTES) return null;
+    const playerId = boundedPlayerOrNoPlayer(payload[0]);
+    const team = new DataView(payload.buffer, payload.byteOffset, payload.byteLength).getUint16(1);
+    if (playerId === null || (team !== 0xffff && team >= 8)) return null;
+    return { playerId, team, bytes: payload.byteLength };
+  }
+
+  function decodeTimeUpdate(packetPayload) {
+    const payload = toUint8Array(packetPayload);
+    if (payload.byteLength !== TIME_UPDATE_PAYLOAD_BYTES) return null;
+    const timeLeft = new DataView(payload.buffer, payload.byteOffset, payload.byteLength).getInt32(0);
+    return { timeLeft, bytes: payload.byteLength };
   }
 
   function decodeFlagUpdate(packetPayload) {
@@ -887,41 +1156,17 @@
     if (payload.byteLength < FLAG_UPDATE_HEADER_BYTES) return null;
     const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
     const count = view.getUint16(0);
-    const maxEntries = Math.floor((payload.byteLength - FLAG_UPDATE_HEADER_BYTES) / (2 + FLAG_PAYLOAD_BYTES));
-    if (count > maxEntries || count > 64) return null;
+    if (count > 64 || payload.byteLength !== FLAG_UPDATE_HEADER_BYTES + count * (2 + FLAG_PAYLOAD_BYTES)) return null;
     const flags = [];
     let offset = FLAG_UPDATE_HEADER_BYTES;
     for (let index = 0; index < count; index += 1) {
       if (!packetHasBytes(payload, offset, 2 + FLAG_PAYLOAD_BYTES)) return null;
       const flagIndex = view.getUint16(offset);
       offset += 2;
-      const flagType = decoder.decode(payload.slice(offset, offset + 2)).replace(/\0/g, "");
-      offset += 2;
-      const status = view.getUint16(offset);
-      offset += 2;
-      const endurance = view.getUint16(offset);
-      offset += 2;
-      const owner = view.getUint8(offset);
-      offset += 1;
-      const position = readVector(view, offset);
-      if (!position) return null;
-      offset = position.offset;
-      const launchPosition = readVector(view, offset);
-      if (!launchPosition) return null;
-      offset = launchPosition.offset;
-      const landingPosition = readVector(view, offset);
-      if (!landingPosition) return null;
-      offset = landingPosition.offset;
-      const flightTime = readPacketFloat(view, offset);
-      if (!flightTime) return null;
-      offset = flightTime.offset;
-      const flightEnd = readPacketFloat(view, offset);
-      if (!flightEnd) return null;
-      offset = flightEnd.offset;
-      const initialVelocity = readPacketFloat(view, offset);
-      if (!initialVelocity) return null;
-      offset = initialVelocity.offset;
-      flags.push({ flagIndex, flagType, status, endurance, owner, position: position.value, launchPosition: launchPosition.value, landingPosition: landingPosition.value, flightTime: flightTime.value, flightEnd: flightEnd.value, initialVelocity: initialVelocity.value });
+      const flag = decodeFlagRecord(payload, offset);
+      if (!flag) return null;
+      offset = flag.offset;
+      flags.push({ flagIndex, ...flag });
     }
     return { count, flags, bytes: offset };
   }
@@ -970,6 +1215,19 @@
       case MSG_PLAYER_UPDATE_SMALL: return decodePlayerUpdate(payload, true);
       case MSG_SHOT_BEGIN: return decodeShotBegin(payload);
       case MSG_SHOT_END: return decodeShotEnd(payload);
+      case MSG_TEAM_UPDATE: return decodeTeamUpdate(payload);
+      case MSG_KILLED: return decodeKilled(payload);
+      case MSG_GRAB_FLAG: return decodeGrabFlag(payload);
+      case MSG_DROP_FLAG: return decodeDropFlag(payload);
+      case MSG_CAPTURE_FLAG: return decodeCaptureFlag(payload);
+      case MSG_TELEPORT: return decodeTeleport(payload);
+      case MSG_TRANSFER_FLAG: return decodeTransferFlag(payload);
+      case MSG_PAUSE: return decodePause(payload);
+      case MSG_AUTO_PILOT: return decodeAutoPilot(payload);
+      case MSG_NEW_RABBIT: return decodeNewRabbit(payload);
+      case MSG_SCORE: return decodeScore(payload);
+      case MSG_SCORE_OVER: return decodeScoreOver(payload);
+      case MSG_TIME_UPDATE: return decodeTimeUpdate(payload);
       case MSG_SUPER_KILL: return toUint8Array(payload).byteLength === 0 ? {} : null;
       case MSG_FLAG_UPDATE: return decodeFlagUpdate(payload);
       case MSG_MESSAGE: return decodeMessage(payload);
@@ -995,13 +1253,27 @@
       [MSG_REMOVE_PLAYER]: "player removed",
       [MSG_MESSAGE]: "server message received",
       [MSG_ALIVE]: "player spawned",
-      [MSG_SHOT_BEGIN]: "shot fired"
+      [MSG_SHOT_BEGIN]: "shot fired",
+      [MSG_TEAM_UPDATE]: "team scores received",
+      [MSG_KILLED]: "player death received",
+      [MSG_GRAB_FLAG]: "flag grab received",
+      [MSG_DROP_FLAG]: "flag drop received",
+      [MSG_CAPTURE_FLAG]: "flag capture received",
+      [MSG_TELEPORT]: "teleport received",
+      [MSG_TRANSFER_FLAG]: "flag transfer received",
+      [MSG_PAUSE]: "player pause state received",
+      [MSG_AUTO_PILOT]: "player autopilot state received",
+      [MSG_NEW_RABBIT]: "rabbit selection received",
+      [MSG_SCORE]: "player scores received",
+      [MSG_SCORE_OVER]: "score limit reached",
+      [MSG_TIME_UPDATE]: "game time received",
+      [MSG_SUPER_KILL]: "server forced disconnection"
     };
     const label = labels[packet.code] || `BZFlag packet 0x${packet.code.toString(16)}`;
     const detail = { channel, ...packet, label };
     const data = decodePacketData(packet.code, packet.payload);
     detail.data = data;
-    detail.valid = data !== null;
+    detail.valid = data !== null && data !== undefined;
     if (packet.code === MSG_ADD_PLAYER && data) {
       detail.player = data;
       detail.local = Boolean(context.nickname && detail.player.nickname === context.nickname);
@@ -1032,6 +1304,7 @@
     MSG_GRAB_FLAG,
     MSG_GET_WORLD,
     MSG_GAME_SETTINGS,
+    MSG_KILLED,
     MSG_MESSAGE,
     MSG_NEGOTIATE_FLAGS,
     MSG_PAUSE,
@@ -1042,8 +1315,11 @@
     MSG_REJECT,
     MSG_REMOVE_PLAYER,
     MSG_SHOT_BEGIN,
+    MSG_SCORE,
     MSG_SHOT_END,
+    MSG_SCORE_OVER,
     MSG_SUPER_KILL,
+    MSG_TIME_UPDATE,
     MSG_AUTO_PILOT,
     MSG_CAPTURE_FLAG,
     MSG_NEW_RABBIT,
@@ -1075,10 +1351,24 @@
     FLAG_PAYLOAD_BYTES,
     MESSAGE_PAYLOAD_BYTES,
     SHOT_END_PAYLOAD_BYTES,
+    KILLED_OUTGOING_PAYLOAD_BYTES,
+    KILLED_SERVER_PAYLOAD_BYTES,
+    KILLED_PHYSICS_DRIVER_BYTES,
     CAPTURE_FLAG_PAYLOAD_BYTES,
+    CAPTURE_FLAG_SERVER_PAYLOAD_BYTES,
+    FLAG_EVENT_SERVER_PAYLOAD_BYTES,
     TRANSFER_FLAG_PAYLOAD_BYTES,
+    TRANSFER_FLAG_SERVER_PAYLOAD_BYTES,
     TELEPORT_PAYLOAD_BYTES,
+    TELEPORT_SERVER_PAYLOAD_BYTES,
     BOOLEAN_PAYLOAD_BYTES,
+    BOOLEAN_SERVER_PAYLOAD_BYTES,
+    NEW_RABBIT_SERVER_PAYLOAD_BYTES,
+    SCORE_OVER_PAYLOAD_BYTES,
+    TIME_UPDATE_PAYLOAD_BYTES,
+    TEAM_RECORD_BYTES,
+    SCORE_RECORD_BYTES,
+    PHYSICS_DRIVER_DEATH,
     SERVER_PLAYER,
     ADMIN_PLAYERS,
     FIRST_TEAM,
@@ -1100,6 +1390,7 @@
     encodePlayerUpdate,
     encodeShotBegin,
     encodeShotEnd,
+    encodeKilled,
     encodeDropFlag,
     encodeGrabFlag,
     encodeCaptureFlag,
@@ -1117,6 +1408,19 @@
     decodePlayerUpdate,
     decodeShotBegin,
     decodeShotEnd,
+    decodeTeamUpdate,
+    decodeKilled,
+    decodeGrabFlag,
+    decodeDropFlag,
+    decodeCaptureFlag,
+    decodeTeleport,
+    decodeTransferFlag,
+    decodePause,
+    decodeAutoPilot,
+    decodeNewRabbit,
+    decodeScore,
+    decodeScoreOver,
+    decodeTimeUpdate,
     decodeFlagUpdate,
     decodeMessage,
     decodeAlive,

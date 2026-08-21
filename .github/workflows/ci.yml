@@ -56,6 +56,11 @@ jobs:
       - name: Verify runtime and locked dependency versions
         run: node .github/scripts/check-runtime-versions.mjs
 
+      - name: Check latest stable toolchain and documented pins
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node .github/scripts/check-toolchain-versions.mjs --check-latest
+
       - name: Install package dependencies
         shell: bash
         run: |
@@ -86,6 +91,9 @@ jobs:
 
       - name: Validate static HTML entry points
         run: node .github/scripts/validate-html.mjs
+
+      - name: Enforce protocol, world, game, renderer, PWA and gateway gates
+        run: node .github/scripts/check-functional-gates.mjs
 
       - name: Validate publishable README documents
         run: node .github/scripts/check-readmes.mjs

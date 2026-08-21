@@ -1,4 +1,5 @@
 {
+  "id": "./index.html",
   "name": "BZFlag Web Client",
   "short_name": "BZFlag Web",
   "description": "A browser client shell for the BZFlag network.",
@@ -8,6 +9,8 @@
   "scope": "./",
   "display": "fullscreen",
   "orientation": "landscape",
+  "categories": ["games", "entertainment"],
+  "prefer_related_applications": false,
   "background_color": "#07111d",
   "theme_color": "#08111d",
   "icons": [

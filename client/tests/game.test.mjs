@@ -111,6 +111,115 @@ assert(game.acceptsServerOrder(15, 16), "a newer authoritative player order was 
 assert(!game.acceptsServerOrder(15, 14), "a stale authoritative player order was accepted");
 assert(!game.acceptsServerOrder(15, 15), "a duplicate authoritative player order was accepted");
 
+let lifecycle = game.createSessionLifecycle(true);
+assert(lifecycle.phase === "connecting" && lifecycle.udpState === "idle", "session lifecycle did not start in connecting/idle state");
+lifecycle = game.applySessionLifecycle(lifecycle, "socket-open");
+lifecycle = game.applySessionLifecycle(lifecycle, "handshake-ready");
+lifecycle = game.applySessionLifecycle(lifecycle, "enter-sent");
+assert(lifecycle.phase === "joining" && lifecycle.tcpReady, "session handshake lifecycle was not advanced");
+lifecycle = game.applySessionLifecycle(lifecycle, "accepted");
+lifecycle = game.applySessionLifecycle(lifecycle, "local-joined", { playerId: 7 });
+lifecycle = game.applySessionLifecycle(lifecycle, "alive");
+assert(lifecycle.phase === "playing" && lifecycle.joined && lifecycle.alive, "accepted player did not enter the playing state");
+assert(game.canSendSessionInput(lifecycle, "move-forward", "start"), "live movement was blocked by the session gate");
+lifecycle = game.applySessionLifecycle(lifecycle, "pause", { paused: true });
+assert(lifecycle.phase === "paused" && !game.canSendSessionInput(lifecycle, "fire", "start"), "paused fire input was not blocked");
+lifecycle = game.applySessionLifecycle(lifecycle, "pause", { paused: false });
+lifecycle = game.applySessionLifecycle(lifecycle, "killed");
+assert(lifecycle.phase === "dead" && lifecycle.respawnPending, "death did not arm respawn state");
+assert(game.canSendSessionInput(lifecycle, "restart", "end"), "restart release was blocked while dead");
+lifecycle = game.applySessionLifecycle(lifecycle, "local-left");
+lifecycle = game.applySessionLifecycle(lifecycle, "socket-close", { reason: "test close" });
+assert(lifecycle.closed && lifecycle.phase === "closed", "session close did not reach the terminal state");
+
+const physics = game.createInputState();
+Object.assign(physics, {
+  playerId: 7,
+  physicsReady: true,
+  alive: true,
+  clientTime: 10,
+  timestamp: 10,
+  position: [0, 0, 0],
+  velocity: [100000, 0, 0],
+  angularVelocity: 100
+});
+assert(game.advanceClientPhysics(physics, 11), "bounded client physics did not advance");
+assert(physics.position[0] === 100 && physics.velocity[0] === 1000, "client physics exceeded the bounded step or speed");
+const pausedPosition = physics.position[0];
+physics.paused = true;
+assert(!game.advanceClientPhysics(physics, 12) && physics.position[0] === pausedPosition, "paused client physics continued to integrate");
+physics.paused = false;
+physics.clientTime = 1_800_000_000;
+physics.position = [0, 0, 0];
+assert(game.advanceClientPhysics(physics, 1_800_000_000.2), "epoch-based client clock was incorrectly clamped");
+const sanitized = game.sanitizePhysicsSnapshot({
+  playerId: 999,
+  position: [Number.NaN, Number.POSITIVE_INFINITY, 4],
+  velocity: [999999, 0, 0],
+  order: 9999999999
+}, physics);
+assert(sanitized.playerId === 7 && sanitized.position[2] === 4 && sanitized.velocity[0] === 1000, "unsafe physics values were not sanitized");
+
+context.window.BZFlagWebProtocol = protocol;
+const firingInput = game.createInputState();
+Object.assign(firingInput, {
+  playerId: 7,
+  physicsReady: true,
+  alive: true,
+  timestamp: 22,
+  position: [1, 2, 3],
+  velocity: [4, 5, 6],
+  azimuth: 0,
+  team: 1
+});
+const firing = game.createFiringState(firingInput, { team: "red", shotSpeed: 500 });
+assert(firing && firing.playerId === 7 && firing.shotId === 0, "bounded firing state was not created");
+assert(firing.velocity[0] === 504 && firing.velocity[1] === 5, "firing velocity did not use the authoritative heading and speed");
+
+Object.assign(protocol, {
+  MSG_ADD_PLAYER: 0x6170,
+  MSG_ALIVE: 0x616c,
+  MSG_PLAYER_UPDATE: 0x7075,
+  MSG_PLAYER_UPDATE_SMALL: 0x7073,
+  MSG_KILLED: 0x6b6c,
+  MSG_PAUSE: 0x7061,
+  MSG_REMOVE_PLAYER: 0x726d
+});
+const session = {
+  connection: { useUDP: true },
+  inputState: game.createInputState(),
+  lifecycle: game.createSessionLifecycle(true),
+  socket: null,
+  renderer: {},
+  serverPlayerOrder: null
+};
+session.inputState.playerId = 7;
+const authoritative = {
+  valid: true,
+  code: protocol.MSG_PLAYER_UPDATE,
+  data: {
+    playerId: 7,
+    order: 1,
+    status: 1,
+    timestamp: 20,
+    position: [1, 2, 3],
+    velocity: [4, 5, 6],
+    azimuth: 0,
+    angularVelocity: 0
+  },
+  payload: new Uint8Array([7])
+};
+assert(game.applySessionProtocolResult(session, authoritative), "authoritative player state was rejected");
+assert(session.lifecycle.phase === "playing" && session.lifecycle.alive, "authoritative alive state did not activate the session");
+assert(!game.applySessionProtocolResult(session, { ...authoritative, data: { ...authoritative.data, order: 1 } }), "stale authoritative state was accepted");
+assert(game.applySessionProtocolResult(session, {
+  ...authoritative,
+  code: protocol.MSG_KILLED,
+  data: { victim: 7 },
+  payload: new Uint8Array([7])
+}), "local death event was rejected");
+assert(session.lifecycle.phase === "dead" && !session.lifecycle.alive, "local death did not stop gameplay input");
+
 context.window.BZFlagWebProtocol = protocol;
 let udpReady = false;
 const keyboardAudio = { play() {} };

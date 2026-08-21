@@ -48,10 +48,16 @@ jobs:
           node-version: 26.7.0
           check-latest: true
 
+      - name: Check latest stable toolchain and documented pins
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node .github/scripts/check-toolchain-versions.mjs --check-latest
+
       - name: Install actionlint
         shell: bash
         run: |
           set -euo pipefail
+          # Pinned stable linter; update deliberately after workflow-gate review.
           go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
@@ -65,6 +71,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Pinned stable auditor; update deliberately after workflow-gate review.
           python3 -m venv "$RUNNER_TEMP/zizmor-venv"
           "$RUNNER_TEMP/zizmor-venv/bin/python" -m pip install --disable-pip-version-check --no-cache-dir "zizmor==1.11.0"
 

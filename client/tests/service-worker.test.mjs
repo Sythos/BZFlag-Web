@@ -32,6 +32,7 @@ const assetManifest = JSON.parse(await readFile(join(root, "assets/asset-manifes
 const handlers = new Map();
 const cache = {
   added: [],
+  deleted: [],
   async addAll(urls) {
     this.added = [...urls];
   },
@@ -43,9 +44,10 @@ const cachesApi = {
     return cache;
   },
   async keys() {
-    return ["old-cache", "bzflag-web-client-v0.1.2"];
+    return ["unrelated-cache", "bzflag-web-client-old", "bzflag-web-client-v0.1.2"];
   },
-  async delete() {
+  async delete(key) {
+    cache.deleted.push(key);
     return true;
   },
   async match(request) {
@@ -102,6 +104,12 @@ for (const script of ["./dist/renderer.js", "./dist/state.js", "./dist/world.js"
   assert(cached.has(script), `offline install omitted ${script}`);
 }
 assert([...cached].every((path) => path.startsWith("./")), "offline cache contains a non-relative path");
+
+let activatePromise;
+handlers.get("activate")({ waitUntil(promise) { activatePromise = promise; } });
+await activatePromise;
+assert(cache.deleted.includes("bzflag-web-client-old"), "activate did not remove the previous BZFlag cache");
+assert(!cache.deleted.includes("unrelated-cache"), "activate removed an unrelated application cache");
 
 let responsePromise;
 handlers.get("fetch")({

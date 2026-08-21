@@ -62,6 +62,12 @@ SOFTWARE.
     motto: HTMLInputElement;
     audioEnabled: HTMLInputElement;
     preferWebGPU: HTMLInputElement;
+    installButton: HTMLButtonElement;
+  };
+
+  type InstallPromptEvent = Event & {
+    prompt: () => Promise<void>;
+    userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
   };
 
   const WEB_VERSION = "0.1.2";
@@ -73,6 +79,7 @@ SOFTWARE.
 
   const elements = {} as AppElements;
   let storageAvailable = true;
+  let deferredInstallPrompt: InstallPromptEvent | null = null;
 
   function getStorage(storage: Storage | null): Storage | null {
     if (!storage) {
@@ -84,6 +91,15 @@ SOFTWARE.
       storage.setItem(marker, marker);
       storage.removeItem(marker);
       return storage;
+    } catch {
+      storageAvailable = false;
+      return null;
+    }
+  }
+
+  function getWindowStorage(kind: "localStorage" | "sessionStorage"): Storage | null {
+    try {
+      return getStorage(kind === "localStorage" ? window.localStorage : window.sessionStorage);
     } catch {
       storageAvailable = false;
       return null;
@@ -192,6 +208,16 @@ SOFTWARE.
     writeJson(storage, PREFERENCES_KEY, preferences);
   }
 
+  function clearSavedPassword(storage: Storage | null): void {
+    if (!storage) {
+      return;
+    }
+    const preferences = readJson<Partial<Preferences>>(storage, PREFERENCES_KEY, {});
+    delete preferences.password;
+    preferences.rememberPassword = false;
+    writeJson(storage, PREFERENCES_KEY, preferences);
+  }
+
   function buildConnection(storage: Storage | null): Connection {
     const values = collectPreferences();
     const session: Connection = {
@@ -223,7 +249,7 @@ SOFTWARE.
 
   function normaliseGatewayEndpoint(endpoint: string): string {
     const value = String(endpoint || "/bridge").trim();
-    if (value.startsWith("/")) {
+    if (value.startsWith("/") && !value.startsWith("//") && !value.includes("\\") && !value.split("/").includes("..")) {
       return value;
     }
     if (/^wss?:\/\//i.test(value)) {
@@ -233,6 +259,41 @@ SOFTWARE.
       return value.replace(/^http/i, "ws");
     }
     return "";
+  }
+
+  function registerInstallPrompt(): void {
+    const button = elements.installButton;
+    if (!button) {
+      return;
+    }
+    button.hidden = true;
+    window.addEventListener("beforeinstallprompt", (event) => {
+      const installEvent = event as InstallPromptEvent;
+      installEvent.preventDefault();
+      deferredInstallPrompt = installEvent;
+      button.hidden = false;
+    });
+    window.addEventListener("appinstalled", () => {
+      deferredInstallPrompt = null;
+      button.hidden = true;
+      showStatus(t("appInstalled"), "success");
+    });
+    button.addEventListener("click", async () => {
+      if (!deferredInstallPrompt) {
+        showStatus(t("installUnavailable"));
+        return;
+      }
+      const installEvent = deferredInstallPrompt;
+      deferredInstallPrompt = null;
+      try {
+        await installEvent.prompt();
+        const choice = await installEvent.userChoice;
+        button.hidden = true;
+        showStatus(choice.outcome === "accepted" ? t("appInstalled") : t("installDismissed"));
+      } catch {
+        showStatus(t("installUnavailable"), "error");
+      }
+    });
   }
 
   function handlePresetChange() {
@@ -306,17 +367,20 @@ SOFTWARE.
     elements.motto = getElement("motto");
     elements.audioEnabled = getElement("audio-enabled");
     elements.preferWebGPU = getElement("prefer-webgpu");
+    elements.installButton = getElement("install-button");
 
-    const localStorage = getStorage(window.localStorage);
-    const sessionStorage = getStorage(window.sessionStorage);
+    const localStorage = getWindowStorage("localStorage");
+    const sessionStorage = getWindowStorage("sessionStorage");
     loadPreferences(localStorage);
     updateFooter();
     registerServiceWorker();
+    registerInstallPrompt();
 
     elements.serverPreset.addEventListener("change", handlePresetChange);
     elements.rememberPassword.addEventListener("change", () => {
       if (!elements.rememberPassword.checked) {
         elements.password.value = "";
+        clearSavedPassword(localStorage);
       }
     });
     elements.form.addEventListener("submit", (event) => handleSubmit(event, localStorage, sessionStorage));

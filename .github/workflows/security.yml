@@ -24,11 +24,19 @@ name: Security
 on:
   push:
     branches: [main]
+    tags:
+      - "v*.*.*"
   pull_request:
     branches: [main]
   schedule:
     - cron: "17 3 * * 2"
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        description: Release ref to scan when called from the release workflow
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -50,6 +58,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.ref || github.ref }}
           persist-credentials: false
 
       - name: Initialize CodeQL
@@ -74,6 +83,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.ref || github.ref }}
           persist-credentials: false
       - name: Dependency review
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
@@ -93,6 +103,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          ref: ${{ inputs.ref || github.ref }}
           persist-credentials: false
 
       - name: Scan repository with Gitleaks
@@ -112,6 +123,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.ref || github.ref }}
           persist-credentials: false
 
       - name: Scan source and configuration with Trivy
