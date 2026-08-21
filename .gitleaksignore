@@ -1,0 +1,4 @@
+# This deterministic RFC 6455 fixture was intentionally non-secret.  It was
+# replaced by a runtime-generated value, while the immutable historical commit
+# remains in the repository history scanned by Gitleaks.
+3b6e9b80bb7a01d85a304143c32d8bd75b008a2a:.github/scripts/verify-bzfs-interoperability.mjs:generic-api-key:280

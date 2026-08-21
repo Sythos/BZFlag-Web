@@ -25,10 +25,11 @@
  * SOFTWARE.
  *
  * Interoperability smoke test: browser-facing WebSocket bridge -> real gateway
- * implementation -> a deterministic BZFS 2.4.31 wire fixture. The fixture is
+ * implementation -> a local BZFS 2.4.31 wire fixture. The fixture is
  * deliberately local and never turns the CI runner into an open proxy.
  */
 
+import { randomBytes } from "node:crypto";
 import { createServer, createConnection } from "node:net";
 import { createSocket } from "node:dgram";
 
@@ -270,6 +271,8 @@ async function run() {
       socket.once("error", reject);
     });
     const tokenProtocol = `bzflag-token.${Buffer.from(SESSION_TOKEN, "utf8").toString("base64url")}`;
+    // RFC 6455 requires a fresh base64-encoded 16-byte nonce for each upgrade.
+    const websocketKey = randomBytes(16).toString("base64");
     socket.write([
       `GET /bridge?server=${SERVER_ID} HTTP/1.1`,
       "Host: 127.0.0.1",
@@ -277,7 +280,7 @@ async function run() {
       "Upgrade: websocket",
       "Connection: Upgrade",
       "Sec-WebSocket-Version: 13",
-      "Sec-WebSocket-Key: dGVzdC1icm93c2VyLWtleQ==",
+      `Sec-WebSocket-Key: ${websocketKey}`,
       `Sec-WebSocket-Protocol: bzflag-web-v1, ${tokenProtocol}`,
       "",
       "",
