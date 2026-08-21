@@ -220,6 +220,14 @@ original gateway and browser components are maintained and credited to Sythos
 ([https://www.sythos.net](https://www.sythos.net)). Visible pages identify the
 web package and the `[BZFS 2.4.31]` compatibility reference.
 
+==> Installation note
+
+Before installing or exposing the gateway, read the complete and deliberately
+pedantic [`server/INSTALL.txt`](server/INSTALL.txt) guide. It explains which
+files to copy and edit, how to create the session token and official-server
+allowlist, how to run the native or Docker service, how to configure IPv4/IPv6
+and reverse proxies, and which security checks must pass before public use.
+
 ==> Disclaimer
 
 This is an independent web derivation and gateway. It is not an official BZFlag

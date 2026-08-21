@@ -1,0 +1,495 @@
+SPDX-License-Identifier: MIT
+Copyright (c) 2026 Sythos (https://www.sythos.net)
+
+MIT License
+
+Copyright (c) 2026 Sythos (https://www.sythos.net)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+======================================================================
+BZFlag Web Gateway Installation and Operations Guide
+======================================================================
+
+This document is deliberately detailed. Read it from beginning to end before
+putting a gateway on a network that other people can reach. The gateway is a
+Node.js WebSocket bridge; it is not a BZFlag game server and it does not run
+the native `bzfs` executable. It gives the browser client a controlled path to
+an operator-approved BZFlag server over the native TCP and UDP transports.
+
+The examples in this document use paths relative to `server/`. Run the shell
+commands from that directory unless a command explicitly says otherwise. Do
+not copy the example values containing `replace-with-` into a public service.
+
+==> 1. What is installed
+
+The `server/` package contains the following important files:
+
+=> `gateway.ts` is the TypeScript source of the gateway.
+=> `gateway.test.ts` contains local TCP, UDP, WebSocket and security tests.
+=> `package.json` and `package-lock.json` pin the build toolchain.
+=> `config.example.json` is a documented configuration template. It is not a
+   production configuration and must be copied before it is edited.
+=> `index.html` is the small gateway landing page served by the process.
+=> `Dockerfile` builds the same gateway in a multi-stage Node.js image.
+=> `dist/` is generated output. It is created by `npm run build`, is ignored by
+   Git, and must not be edited by hand.
+
+The gateway accepts a browser WebSocket upgrade at `/bridge`, authenticates an
+operator-provided session token, validates the selected allowlisted target,
+performs a bounded native BZFS identity preflight, and then forwards bounded
+TCP or UDP bridge envelopes. It rejects arbitrary host and port values supplied
+by a browser. The default policy also rejects custom entries and private target
+addresses.
+
+==> 2. Supported installation models
+
+Choose one of these models before editing configuration:
+
+=> Native Node.js service. This is appropriate for a development machine, a
+   VM, or a host where a service manager controls Node.js. The process listens
+   on `127.0.0.1:8080` by default, which is the safest native starting point.
+=> Docker container. This is appropriate for a repeatable deployment. The
+   image listens on `0.0.0.0` inside the container so a published port can
+   reach it; firewall and port publishing remain the operator's responsibility.
+=> Reverse-proxied service. Apache, Nginx, or another reviewed proxy terminates
+   HTTPS and WSS, serves the static client, and forwards `/bridge` to the
+   private Node.js listener. This is the recommended public layout.
+
+Do not run two gateway processes on the same host and port. Do not expose the
+native development listener directly to the Internet. Do not publish a Docker
+port without configuring an allowlist, a non-default token, TLS at the proxy,
+and a firewall policy.
+
+==> 3. Prerequisites
+
+Install all of the following before continuing:
+
+=> Node.js 26.7.0 or a newer supported stable Node.js release. The repository
+   `engines` field and CI enforce this baseline.
+=> npm supplied with the Node.js installation. Do not use a globally installed
+   TypeScript compiler in place of the locked development dependency.
+=> Network access from this host to every official BZFlag server that will be
+   placed in the allowlist. The gateway needs the configured TCP and UDP ports.
+=> A separately deployed copy of the web client, served from an exact origin
+   that will be listed in `allowedOrigins`.
+=> A TLS certificate and HTTPS reverse proxy for any service reachable by real
+   users. Browsers restrict WebSocket, WebGPU and service-worker behaviour on
+   insecure public origins.
+=> A service account, container secret store, or protected file location for
+   the session token. Never put a production token in Git, a public archive,
+   browser source, an issue, or a public log.
+
+Check the runtime before installing dependencies:
+
+```text
+node --version
+npm --version
+```
+
+The first command must report `v26.7.0` or a newer supported stable release.
+If the version is older, install the current stable Node.js release and open a
+new terminal before proceeding. Do not work around the engine check by using
+`--ignore-engines` or by replacing the lockfile.
+
+==> 4. Create a private configuration file
+
+From this `server/` directory, copy the template to the private file used by
+the process:
+
+```sh
+cp ./config.example.json ./config.json
+```
+
+On Windows PowerShell use:
+
+```powershell
+Copy-Item ./config.example.json ./config.json
+```
+
+`config.json` is intentionally not a publishable example. Keep its filesystem
+permissions restricted to the service account. Confirm that it is not staged
+before every commit:
+
+```sh
+git status --short --ignored ./config.json
+```
+
+The repository ignores the local configuration path, but ignoring a file is
+not a substitute for access control or a secret-management policy.
+
+==> 5. Generate and install a session token
+
+Create a high-entropy token with Node.js:
+
+```sh
+node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
+```
+
+Copy the complete single-line result into the `sessionToken` property in
+`config.json`, without leading or trailing whitespace. A token may instead be
+supplied by the environment as `BZFLAG_WEB_SESSION_TOKEN`; that method is
+preferred for Docker, a service manager, and any host where configuration files
+are backed up.
+
+The token authenticates the browser-to-gateway session. It is not the password
+of a BZFlag player and it does not grant permission to a target server. The
+browser client sends the token in the WebSocket subprotocol during its normal
+connection flow. The legacy query-string form remains available only for
+migration and should be disabled after all deployed clients have migrated:
+
+```json
+"allowLegacyQueryToken": false
+```
+
+Never reuse the same token across unrelated public gateway instances. Rotate
+the token after a suspected disclosure, then restart every process using it.
+
+==> 6. Edit the allowlist and browser origin
+
+The most important part of `config.json` is the exact allowlist. Start with a
+single official server and add entries only after independently verifying the
+server identity, operator permission and TCP/UDP ports.
+
+The minimum shape of an enabled official entry is:
+
+```json
+{
+  "id": "official-main",
+  "label": "Official BZFlag server",
+  "kind": "official",
+  "host": "approved.example.invalid",
+  "port": 5154,
+  "udpPort": 5154,
+  "protocolVersion": "0221",
+  "bzflagVersion": "2.4.31",
+  "enabled": true
+}
+```
+
+Replace the host with the real approved official BZFS hostname or literal
+address. Do not leave `approved.example.invalid` in a live configuration. The
+browser submits only the `id`; it cannot choose an arbitrary host or port.
+
+Set `allowedOrigins` to the exact origins from which the static client will be
+served. Include the scheme and, when needed, the port. Do not add a path and do
+not use `*`:
+
+```json
+"allowedOrigins": [
+  "https://play.example.invalid"
+]
+```
+
+For local development only, an origin such as `http://127.0.0.1:4173` may be
+listed. The origin must match the browser address exactly. `http://localhost`
+and `http://127.0.0.1` are different origins, and an explicit port is part of
+the origin.
+
+Keep these safety switches unchanged for the public official-server setup:
+
+```json
+"allowCustomServers": false,
+"allowPrivateAddresses": false,
+"trustProxy": false
+```
+
+`allowCustomServers` is reserved for a future operator-approved policy.
+`allowPrivateAddresses` is a local-fixture escape hatch and must not be enabled
+on a public gateway. `trustProxy` must remain false unless the gateway is
+actually behind a known proxy and `trustedProxyPeers` contains its exact
+literal IP address. Proxy hostnames and broad CIDR trust are intentionally not
+accepted by the current implementation.
+
+==> 7. IPv4 and IPv6 configuration
+
+The gateway and client support both address families. Choose the listener host
+according to the deployment topology:
+
+=> `127.0.0.1` keeps a native listener private for a local reverse proxy.
+=> `::1` keeps a native IPv6 listener private when the proxy is IPv6-local.
+=> `0.0.0.0` listens on all IPv4 interfaces and must be protected by a firewall.
+=> `::` requests an IPv6 dual-stack listener where the operating system permits
+   mapped IPv4 connections. Verify the host's socket policy instead of assuming
+   that every platform enables dual-stack mode.
+
+An IPv6 target in `servers` is a raw address without URL brackets, for example
+`2001:db8::20`. An IPv6 gateway URL entered in the browser uses URL brackets,
+for example `wss://[2001:db8::10]/bridge`. DNS targets may resolve to A and
+AAAA records; the gateway validates and pins the selected address before it
+opens TCP and UDP connections.
+
+==> 8. Install dependencies and build the gateway
+
+Install the exact locked development dependencies from `server/`:
+
+```sh
+npm ci
+npm run check
+npm run build
+npm test
+```
+
+`npm ci` removes and recreates the local dependency tree from
+`package-lock.json`. `npm run check` performs the TypeScript check without
+emitting files. `npm run build` emits `dist/gateway.js`. `npm test` rebuilds the
+gateway and executes the local TCP, UDP, BZFS-preflight, WebSocket parser,
+allowlist, rate-limit and IPv4/IPv6 tests. The tests use local fixtures and do
+not scan public BZFlag servers.
+
+Do not edit `dist/gateway.js` directly. If the TypeScript source or tests are
+changed, rerun `npm run build` and then `npm test`. A deployment must use the
+compiled output produced from the same source revision as the configuration
+documentation it follows.
+
+==> 9. Start a native development instance
+
+With `config.json` present and `dist/gateway.js` built, start from `server/`:
+
+```sh
+npm start
+```
+
+The equivalent explicit command is:
+
+```sh
+node ./dist/gateway.js --config ./config.json
+```
+
+The process reports its listener and the number of enabled allowlisted servers.
+It must not print the bearer token. In another terminal, verify the health
+endpoint:
+
+```sh
+curl --fail http://127.0.0.1:8080/healthz
+```
+
+On Windows PowerShell:
+
+```powershell
+Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8080/healthz
+```
+
+The health response is a readiness signal, not proof that a target BZFS server
+is reachable. Test an actual connection through the client after confirming
+the allowlist and firewall rules. Stop the development process with `Ctrl+C`.
+
+==> 10. Select another configuration path
+
+The process checks configuration in this order:
+
+1. `--config ./path/to/config.json` when the command-line option is present.
+2. `BZFLAG_WEB_CONFIG` when no `--config` option is present.
+3. `./config.json` relative to the process working directory.
+
+Use an explicit path when a service manager starts the process from a directory
+other than `server/`:
+
+```sh
+node ./dist/gateway.js --config ./private/config.json
+```
+
+The path must exist and contain valid JSON. Relative paths are resolved by the
+Node.js process from its current working directory, so set the service manager
+working directory deliberately or use a stable absolute path in that manager's
+configuration. The repository's source and public documentation continue to
+use relative paths; deployment systems may choose their own private root.
+
+==> 11. Environment overrides
+
+Environment values override the corresponding JSON values. The implementation
+currently recognises these names:
+
+=> `BZFLAG_WEB_CONFIG` selects the default configuration file path.
+=> `BZFLAG_WEB_HOST` overrides `host`.
+=> `BZFLAG_WEB_PORT` overrides `port`.
+=> `BZFLAG_WEB_SESSION_TOKEN` overrides `sessionToken`.
+=> `BZFLAG_WEB_ALLOWED_ORIGINS` replaces `allowedOrigins` with a comma-separated
+   list of exact origins.
+=> `BZFLAG_WEB_ALLOW_CUSTOM_SERVERS=true` enables custom entries; do not set it
+   for the official-only public deployment.
+=> `BZFLAG_WEB_ALLOW_LEGACY_QUERY_TOKEN=false` disables query-string token
+   compatibility; `true` explicitly enables the migration path.
+=> `BZFLAG_WEB_TRUST_PROXY=true` enables proxy-IP handling, but the JSON must
+   still contain at least one exact address in `trustedProxyPeers`.
+
+Environment values are not automatically persisted or encrypted. Use the
+operating system service manager or container secret facility, restrict process
+inspection and logs, and verify that the service definition does not print
+secret values.
+
+==> 12. Docker installation
+
+Build the image from this directory so every Dockerfile `COPY` source remains
+inside the self-contained `server/` context:
+
+```sh
+docker build --pull --tag sythos/bzflag-web-gateway:local .
+```
+
+The image uses Node.js 26.7.0 Alpine in its build and runtime stages. It runs
+as the unprivileged `node` user, contains the compiled gateway and installation
+page, and defaults its container listener to `0.0.0.0`. It does not contain a
+private `config.json`; mount one at runtime:
+
+```sh
+docker run --rm --name bzflag-web-gateway \
+  --publish 8080:8080 \
+  --volume "./config.json:/app/config.json:ro" \
+  sythos/bzflag-web-gateway:local
+```
+
+The equivalent PowerShell command is:
+
+```powershell
+docker run --rm --name bzflag-web-gateway `
+  --publish 8080:8080 `
+  --volume "${PWD}\config.json:/app/config.json:ro" `
+  sythos/bzflag-web-gateway:local
+```
+
+The image sets `BZFLAG_WEB_CONFIG=./config.json` and
+`BZFLAG_WEB_HOST=0.0.0.0`. The mounted JSON still controls the allowlist,
+origins, token and port unless an explicit environment override is supplied.
+The built-in healthcheck calls `http://127.0.0.1:8080/healthz` inside the
+container. From the host, check the published port with:
+
+```sh
+curl --fail http://127.0.0.1:8080/healthz
+```
+
+Do not use `--network host` as a shortcut for configuration. Publish only the
+port required by the reviewed proxy topology, and place the Docker container
+on a private network when the reverse proxy is a separate service.
+
+==> 13. Reverse proxy and static client setup
+
+The gateway should normally be private and the browser client should be served
+from an HTTPS origin. The high-level topology is:
+
+```text
+browser -> HTTPS reverse proxy -> static client files
+                            \\-> WSS /bridge -> private Node.js gateway
+                                             \\-> allowlisted BZFS TCP/UDP
+```
+
+Build and deploy the client separately from `client/` according to its
+`README.md`. Add the exact client origin to `allowedOrigins`; for example,
+`https://play.example.invalid`. Configure the proxy to preserve WebSocket
+upgrade headers, forward `/bridge` to the gateway listener, and avoid exposing
+the gateway's administrative filesystem.
+
+For Apache, review `client/deploy/apache.conf`. For Nginx, review
+`client/deploy/nginx.conf`. These files concern static client delivery and
+service-worker behaviour; they are not a substitute for a TLS certificate,
+proxy access control, firewall rules or a secret policy.
+
+Use `wss://` from a public HTTPS client. A browser page loaded from HTTPS cannot
+reliably use an insecure `ws://` gateway on another origin. During local
+development, a matching `http://` and `ws://` pair may be used on loopback only.
+
+==> 14. First connection checklist
+
+Before asking a player to test, complete every item below:
+
+1. The installed Node.js version is supported and `npm ci` completed without
+   changing either lockfile.
+2. `npm run check`, `npm run build` and `npm test` passed from `server/`.
+3. `config.json` is private, contains a newly generated token, and has no
+   `replace-with-` placeholder.
+4. `allowedOrigins` exactly matches the deployed client origin.
+5. At least one `servers` entry is enabled, marked `official`, and points to a
+   server that the operator has permission to contact.
+6. `allowCustomServers`, `allowPrivateAddresses` and `trustProxy` are false
+   unless a documented isolated exception is being tested.
+7. The target host resolves to an approved address and its TCP and UDP ports
+   are reachable from the gateway host.
+8. The gateway health endpoint is reachable only through the intended local
+   proxy or private network, not from an unrestricted public interface.
+9. The proxy has TLS/WSS, WebSocket upgrade support, request limits and logs
+   that do not contain tokens or player passwords.
+10. The client uses the correct relative or WSS bridge endpoint and the browser
+    console shows no mixed-content or service-worker errors.
+11. A test player can connect, receive the BZFS preflight, enter a game, and
+    disconnect cleanly over both the normal browser path and the proxy path.
+12. Firewall and monitoring rules have an owner and a rollback procedure.
+
+If any item fails, stop at the private test stage. A successful `/healthz` call
+alone does not justify making the gateway public.
+
+==> 15. Troubleshooting
+
+=> `EADDRINUSE` means another process already owns the configured listener. Find
+   that process or select a reviewed free port; do not start a second gateway
+   on the same port.
+=> `Origin is not allowed` means the browser origin is absent or differs by
+   scheme, hostname or port. Correct `allowedOrigins` and restart the gateway.
+=> `Gateway session authentication failed` means the client and gateway tokens
+   differ, the token was truncated, or the selected subprotocol is wrong. Set a
+   new token through the private configuration path and reconnect.
+=> `Custom servers are disabled` means the browser selected a target not marked
+   as an enabled official allowlist entry. Add an approved official entry;
+   never enable custom mode just to bypass a configuration error.
+=> `Target is not a BZFS server` means the preflight did not receive the
+   expected `BZFS` greeting and protocol version. Check the hostname, TCP port,
+   TLS/proxy assumptions and server identity. Do not use the gateway to relay
+   an unverified service.
+=> `Target address is not allowed` means DNS resolved to a loopback, private,
+   link-local, multicast, metadata or other reserved range. Keep the rejection
+   for public deployment and correct the allowlist or DNS instead.
+=> A WebSocket timeout usually means the proxy is missing upgrade headers, the
+   gateway is not reachable from the proxy, the firewall blocks the path, or
+   the browser is using `ws://` from an HTTPS page.
+=> A Docker host health failure with a healthy container usually indicates an
+   incorrect published port, a local firewall, or a custom host override. The
+   supplied image default is `BZFLAG_WEB_HOST=0.0.0.0`; check `docker logs` and
+   `docker inspect` before changing the application policy.
+
+Collect diagnostics without collecting secrets. Redact tokens, passwords,
+private target addresses and player data before sharing logs. Use GitHub Issues
+for reproducible non-sensitive defects and the repository security process for
+security-sensitive reports.
+
+==> 16. Updating and rollback
+
+For an update, obtain the intended Git tag or release archive, verify its
+SHA-256 checksum against `SHA256SUMS.txt`, stop the current process, replace the
+application files, run `npm ci` and the checks in section 8, review the private
+configuration against the new `config.example.json`, and start the new build.
+Do not copy a generated `dist/` directory from an unrelated revision.
+
+Keep the previous release archive available for rollback. To roll back, stop
+the gateway, restore the previous verified files, restore the compatible
+configuration if required, and restart. Rotate the session token if the
+upgrade or rollback may have exposed it. Confirm `/healthz`, then perform one
+controlled client connection before reopening the service to players.
+
+==> 17. Security and licence reminders
+
+This gateway is a transport boundary, not a complete security boundary. Keep
+the allowlist short, reject custom and private targets, use TLS/WSS, limit
+network exposure, rotate secrets, patch Node.js and dependencies, and run the
+repository checks before every public deployment. Only contact BZFlag servers
+you are authorised to contact and comply with their rules.
+
+Original gateway documentation and code are MIT-licensed by Sythos. Any
+upstream BZFlag-derived material remains under its original LGPL-2.1/MPL-2.0
+terms and notices. Review `../LICENSE-MIT`, `../COPYING`, `../COPYING.LGPL`,
+`../COPYING.MPL`, `../NOTICE`, `../AUTHORS` and `../ATTRIBUTION.md` before
+redistributing modified packages.
