@@ -137,6 +137,8 @@ if (serverPackage) {
   }
 }
 
+await requireFile(".github/scripts/verify-bzfs-interoperability.mjs", "BZFS interoperability smoke script");
+
 const smokeSource = clientTestSources.get("client/tests/smoke.mjs") || "";
 for (const marker of [
   '"dist/protocol.js"',

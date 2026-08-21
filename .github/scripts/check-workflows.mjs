@@ -112,6 +112,7 @@ requireMarker(ci, ".github/workflows/ci.yml", "npm run typecheck --prefix client
 requireMarker(ci, ".github/workflows/ci.yml", "npm test --prefix server");
 requireMarker(ci, ".github/workflows/ci.yml", "npm test --prefix client");
 requireMarker(ci, ".github/workflows/ci.yml", "node .github/scripts/check-functional-gates.mjs");
+requireMarker(ci, ".github/workflows/ci.yml", "node .github/scripts/verify-bzfs-interoperability.mjs");
 requireMarker(ci, ".github/workflows/ci.yml", "node .github/scripts/check-readmes.mjs");
 requireMarker(ci, ".github/workflows/ci.yml", "browser-e2e:");
 requireMarker(ci, ".github/workflows/ci.yml", "run-browser-e2e.mjs");
@@ -161,6 +162,7 @@ requireMarker(release, ".github/workflows/release.yml", "IMAGE_NAME: ghcr.io/syt
 requireMarker(release, ".github/workflows/release.yml", "node --check");
 requireMarker(release, ".github/workflows/release.yml", "node .github/scripts/check-readmes.mjs");
 requireMarker(release, ".github/workflows/release.yml", "validate-docker-context.mjs");
+requireMarker(release, ".github/workflows/release.yml", "node .github/scripts/verify-bzfs-interoperability.mjs");
 requireMarker(release, ".github/workflows/release.yml", "run-browser-e2e.mjs");
 requireMarker(release, ".github/workflows/release.yml", "node .github/scripts/check-functional-gates.mjs");
 requireMarker(release, ".github/workflows/release.yml", "node .github/scripts/verify-release-artifacts.mjs --release-tag");

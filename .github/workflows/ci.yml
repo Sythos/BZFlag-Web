@@ -79,6 +79,7 @@ jobs:
           npm run typecheck --prefix server
           npm run build --prefix server
           npm test --prefix server
+          node .github/scripts/verify-bzfs-interoperability.mjs
 
       - name: Run client checks
         shell: bash
