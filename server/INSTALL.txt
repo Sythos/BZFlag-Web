@@ -507,7 +507,15 @@ atypical direct port when direct exposure is unavoidable, limit network
 exposure, rotate secrets, patch Node.js and dependencies, and run the
 repository checks before every public deployment. The BZFS preflight is only a
 generic wrong-service check and must not be described as complete protection
-against abuse, flooding or hostile peers. Only contact BZFlag servers you are
+against abuse, flooding or hostile peers.
+
+The owner of the host or service running Node.js retains full responsibility
+for abuse prevention and response. That responsibility includes network and
+application filtering, throttling and quotas, firewall rules, reverse-proxy
+limits, monitoring, incident response, blocking abusive clients, and complying
+with the rules of the upstream BZFlag server. The gateway's built-in frame,
+session and rate limits are baseline guardrails; they do not transfer or remove
+that operational responsibility. Only contact BZFlag servers you are
 authorised to contact and comply with their rules.
 
 Original gateway documentation and code are MIT-licensed by Sythos. Any
