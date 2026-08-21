@@ -95,8 +95,8 @@ const requiredArchives = [
   `${clientName}.zip`,
   `${serverName}.zip`,
   `${serverName}.tar.gz`,
-  `${serverName}-docker.tar`,
-  `${serverName}-docker.tar.gz`,
+  `bzflag-web-server-docker-${version}.tar`,
+  `bzflag-web-server-docker-${version}.tar.gz`,
 ];
 
 for (const archive of requiredArchives) await requireFile(resolve(root, archive), `release/${archive}`);
