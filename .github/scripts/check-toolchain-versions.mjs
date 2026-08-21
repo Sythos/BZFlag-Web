@@ -171,7 +171,11 @@ if (process.argv.includes("--check-latest")) {
     await compareLatest(label, version, reason, `https://registry.npmjs.org/${encodeURIComponent(packageName)}/latest`, (metadata) => metadata.version);
   }
   for (const [action, record] of actionReferences) {
-    await compareLatest(`Action ${action}`, record.releaseComment, PIN_REASONS.actions, `https://api.github.com/repos/${action}/releases/latest`, (release) => String(release.tag_name || ""));
+    // Marketplace actions can be referenced through a subdirectory (for
+    // example github/codeql-action/init). GitHub releases belong to the
+    // owning repository, not to that subdirectory.
+    const repository = action.split("/").slice(0, 2).join("/");
+    await compareLatest(`Action ${action}`, record.releaseComment, PIN_REASONS.actions, `https://api.github.com/repos/${repository}/releases/latest`, (release) => String(release.tag_name || ""));
   }
 }
 
