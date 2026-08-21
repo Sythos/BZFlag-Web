@@ -67,6 +67,7 @@ try {
   if (!/FROM\s+node:26\.7\.0-alpine\b/i.test(dockerfile)) failure("server/Dockerfile: Node 26.7.0 Alpine is required for the gateway build and runtime stages");
   if (/gateway\.mjs/i.test(dockerfile)) failure("server/Dockerfile: legacy gateway.mjs reference is not allowed");
   if (!/CMD\s+\[\s*["']node["']\s*,\s*["']gateway\.js["']\s*\]/i.test(dockerfile)) failure("server/Dockerfile: gateway.js must be the runtime entrypoint");
+  if (!/BZFLAG_WEB_HOST=0\.0\.0\.0/i.test(dockerfile)) failure("server/Dockerfile: published containers must bind the gateway on 0.0.0.0");
 
   for (const [index, rawLine] of dockerfile.split(/\r?\n/).entries()) {
     const line = rawLine.trim();

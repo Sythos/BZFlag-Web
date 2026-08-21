@@ -216,7 +216,9 @@ The multi-stage image uses `node:26.7.0-alpine` to compile TypeScript in a
 disposable build stage. The final image contains only the compiled gateway, its
 installation page, `package.json` and the standalone MIT license. Configuration
 is mounted at runtime. The container runs as the unprivileged `node` user and
-exposes a `/healthz` Docker health check. TLS normally terminates at Apache or
+listens on all container interfaces so a published port can reach it (the
+non-container default remains `127.0.0.1`). It exposes a `/healthz` Docker
+health check. TLS normally terminates at Apache or
 Nginx; direct TLS is also supported through `tls.keyFile` and `tls.certFile` in
 a configuration file mounted into the container.
 

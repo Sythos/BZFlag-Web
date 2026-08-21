@@ -29,7 +29,8 @@ RUN npm run build
 FROM node:26.7.0-alpine
 
 ENV NODE_ENV=production \
-    BZFLAG_WEB_CONFIG=./config.json
+    BZFLAG_WEB_CONFIG=./config.json \
+    BZFLAG_WEB_HOST=0.0.0.0
 
 WORKDIR /app
 COPY package.json LEGAL-MIT.txt index.html ./
