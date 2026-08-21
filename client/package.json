@@ -1,6 +1,6 @@
 {
   "name": "@sythos/bzflag-web-client",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "private": true,
   "description": "Static HTML5 BZFlag web client authored in TypeScript with WebGPU/WebGL2 rendering.",
   "type": "module",

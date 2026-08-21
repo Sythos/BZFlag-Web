@@ -33,7 +33,7 @@ import type { AddressInfo } from 'node:net';
 import type { RemoteInfo, Socket as DatagramSocket } from 'node:dgram';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
-export const GATEWAY_VERSION = '0.1.2';
+export const GATEWAY_VERSION = '0.2.0';
 export const DEFAULT_BZFLAG_VERSION = '2.4.31';
 export const DEFAULT_BZFLAG_PROTOCOL = '0221';
 export const BZFLAG_CONNECT_HEADER = Buffer.from('BZFLAG\r\n\r\n', 'ascii');

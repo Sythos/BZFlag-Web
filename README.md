@@ -50,41 +50,39 @@ so that users can distinguish the web release from the game baseline.
 
 ==> Current implementation boundary
 
-Version `0.1.2` is an MVP/prototype. It provides the connection form, session
-handoff, initial keyboard and audio controls, bounded WebSocket bridge framing,
-and a WebGPU/WebGL2 capability preview. It is not yet a complete playable
-BZFlag client: full world simulation, native protocol/gameplay parity, complete
-game media and verified official-server interoperability remain implementation
-milestones. The architecture described below is the intended path, not a claim
-that every target feature is already complete.
+Version `0.2.0` is the first public interoperability release. It provides the
+connection form, native binary protocol lifecycle, strict world decoding,
+authoritative state reduction, keyboard and audio controls, bounded WebSocket
+bridging, and WebGPU/WebGL2 rendering. It targets the supported BZFlag 2.4.31
+packet and world subset rather than replacing every feature of the native
+executable; advanced mesh and group rendering, touch/gamepad extensions, and
+operator-provided server credentials remain explicit deployment boundaries.
 
 ==> What the server and client do together
 
 The browser opens `client/index.html` to enter a nickname, select an allowlisted
 server and set the connection preferences normally required by a BZFlag client.
 The Connect action transfers the session to `client/web_game_run.html`, which is
-the independent game window. The current MVP initializes the session state,
-keyboard/audio controls, bridge framing and a deterministic renderer scene
-pipeline. Validated world geometry records and authoritative tanks, shots and
-flags are converted into shared WebGPU/WebGL2 scene objects. The target
-gameplay layer still needs the complete native world decoder, simulation and
-full protocol/gameplay parity.
+the independent game window. The client decodes the supported native world
+records, reduces authoritative session updates, and converts validated geometry
+plus tanks, shots and flags into shared WebGPU/WebGL2 scene objects. Unsupported
+native extensions are rejected or left to the documented future adapter layer.
 
 The browser first requests WebGPU. When no usable adapter is available, the
-client selects WebGL2. Both renderer paths are designed to consume the same
-world model, input layer, asset pipeline and network session. TypeScript remains
-the source of truth; the static package contains the JavaScript emitted by the
-build. WebAssembly is permitted for isolated, measured performance hot spots,
-but it is not a required browser plug-in.
+client selects WebGL2. Both renderer paths consume the same decoded world model,
+input layer, asset pipeline and network session. TypeScript remains the source
+of truth; the static package contains the JavaScript emitted by the build.
+WebAssembly is permitted for isolated, measured performance hot spots, but it is
+not a required browser plug-in.
 
 The gateway is the network boundary between the browser and BZFS. A browser
 cannot open native BZFlag TCP or UDP sockets directly, and the gateway must not
 become a general-purpose TCP proxy. It therefore exposes only the narrow
 WebSocket/WSS endpoint required by this client, applies policy before connecting
 to an upstream target, and relays bounded TCP/UDP bridge frames. The current
-gateway is transport-oriented rather than a semantic translator for every
-BZFlag message. Its default catalogue contains official servers only; custom
-servers remain disabled while the future adapter boundary is kept extensible.
+gateway remains transport-oriented rather than pretending to be a second BZFS
+implementation. Its default catalogue contains official servers only; custom
+servers remain disabled while the adapter boundary stays extensible.
 
 The normal deployment is:
 
@@ -113,8 +111,9 @@ native `BZFLAG\r\n\r\n` preamble upstream and requires the bounded `BZFS` greeti
 the configured protocol version and a valid player id. Non-BZFS services,
 version mismatches, full-server responses and silent targets are closed before
 client bytes can reach them. Idle, malformed, oversized or over-budget sessions
-are closed instead of being forwarded indefinitely. Full native protocol
-translation and gameplay parity remain later milestones.
+are closed instead of being forwarded indefinitely. Semantic packet handling is
+implemented in the client for the supported release baseline; unsupported
+native extensions remain explicit future work.
 
 The production configuration is allowlist-first:
 
@@ -136,9 +135,9 @@ development.
 
 The gateway is not an official BZFlag server and does not replace `bzfs`/BZFS.
 It is an adapter boundary for the selected upstream server, not a promise that
-the current prototype preserves every native client feature. The small protocol
-boundary leaves room for semantic translation and future operator-approved
-custom-server support without weakening the secure default.
+every native client extension is available in the browser. The small protocol
+boundary leaves room for future operator-approved custom-server support without
+weakening the secure default.
 
 ==> Client rendering, input and media
 

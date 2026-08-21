@@ -29,13 +29,13 @@ independent game window (`web_game_run.html`), WebGPU rendering with a WebGL2
 fallback, binary BZFlag bridge framing, a PWA service worker, local upstream
 media and the sixteen locale catalogues from the pinned BZFlag 2.4.31 baseline.
 
-Version `0.1.2` is an MVP/prototype, not a complete playable BZFlag client. It
-currently wires the connection form, session handoff, initial keyboard and audio
-controls, renderer selection, bounded bridge framing and a deterministic scene
-pipeline for validated world geometry, tanks, shots and flags. Complete world
-simulation, native protocol/gameplay parity, full asset integration and verified
-official-server interoperability remain milestones. This document describes the
-current boundary and must not be read as a production compatibility claim.
+Version `0.2.0` is the first public interoperability release. It wires the
+connection form, session handoff, native packet lifecycle, strict world decoder,
+authoritative state reducer, keyboard and audio controls, renderer selection,
+bounded bridge framing and a scene pipeline for validated world geometry, tanks,
+shots and flags. It targets the supported BZFlag 2.4.31 baseline; advanced mesh
+and group rendering plus optional touch/gamepad controls remain explicit future
+extensions rather than hidden compatibility claims.
 
 The package is not a native BZFlag executable and does not include `bzfs`. A
 Node.js gateway in [`../server/`](../server/) is required because a browser page
@@ -116,16 +116,16 @@ claim that every native BZFlag obstacle is already decoded.
 
 The compressed BZFlag world database is not self-describing at the individual
 object level. Its dynamic-colour, material, transform, obstacle, link, weapon
-and entry-zone managers must be decoded in native order. `world.ts` therefore
-validates the native envelope and exposes a strict adapter for a future native
-or WebAssembly decoder; until that decoder is supplied, the client keeps the
-safe world summary and does not invent geometry from compressed bytes.
+and entry-zone managers must be decoded in native order. `world.ts` validates
+the native envelope and exposes the decoded summary to the renderer. Unsupported
+mesh and group-detail records are reported explicitly, so the client never
+invents geometry from compressed bytes. A future WebAssembly decoder may extend
+that bounded path when measurement justifies it.
 
-The input layer keeps the native keyboard mapping as its intended compatibility
-source of truth. The MVP includes the initial controls and the F11 guidance;
-complete native command coverage, pointer lock and touch/gamepad extensions are
-follow-up work. Browser audio starts from a user gesture to comply with the
-autoplay policy.
+The input layer keeps the native keyboard mapping as its compatibility source of
+truth and includes the F11 guidance. Pointer lock and touch/gamepad extensions
+are optional follow-up work. Browser audio starts from a user gesture to comply
+with the autoplay policy.
 
 ==> PWA, cache and localization
 

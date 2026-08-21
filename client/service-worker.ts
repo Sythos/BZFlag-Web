@@ -21,7 +21,7 @@ SOFTWARE.
 */
 
 const CACHE_PREFIX = "bzflag-web-client-";
-const CACHE_NAME = `${CACHE_PREFIX}v0.1.2`;
+const CACHE_NAME = `${CACHE_PREFIX}v0.2.0`;
 const ASSET_MANIFEST = "./assets/asset-manifest.json";
 const STATIC_ASSETS = [
   "./",
