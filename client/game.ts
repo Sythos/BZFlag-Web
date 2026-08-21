@@ -1507,6 +1507,7 @@ SOFTWARE.
     AudioEngine,
     decodeBridgeMessage,
     encodeBridgeMessage,
+    resolveWebSocketEndpoint,
     toWebSocketUrl,
     toWebSocketProtocols,
     resolveChatTarget,

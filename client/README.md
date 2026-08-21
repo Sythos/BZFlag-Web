@@ -66,6 +66,11 @@ gateway session token supplied by the operator. Select **Connect** to open
 `web_game_run.html`. The setup page also includes a browser fullscreen button and
 recommends `F11`.
 
+The gateway field accepts relative endpoints such as `/bridge` and absolute
+`ws://` or `wss://` URLs. For an IPv6 gateway, use the standard bracketed URL
+form, for example `ws://[::1]:8080/bridge`; the client keeps the same BZWB
+protocol and WebSocket behavior for IPv4 and IPv6.
+
 The gateway token is kept only in the current tab's `sessionStorage`. The BZFlag
 server password is never saved unless the player explicitly enables **Save
 password on this device**; when disabled, it is removed from local preferences.

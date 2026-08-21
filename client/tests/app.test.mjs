@@ -114,6 +114,7 @@ assert(serviceWorkerCalls[0]?.[0] === "./service-worker.js", "service worker reg
 assert(serviceWorkerCalls[0]?.[1]?.scope === "./", "service worker scope is not relative");
 assert(context.window.BZFlagWebClient.normaliseGatewayEndpoint("//external.example/bridge") === "", "protocol-relative gateway endpoint was accepted");
 assert(context.window.BZFlagWebClient.normaliseGatewayEndpoint("/bridge") === "/bridge", "relative gateway endpoint was rejected");
+assert(context.window.BZFlagWebClient.normaliseGatewayEndpoint("ws://[::1]:8080/bridge") === "ws://[::1]:8080/bridge", "IPv6 gateway endpoint was rejected");
 
 const remember = elements.get("remember-password");
 remember.checked = false;

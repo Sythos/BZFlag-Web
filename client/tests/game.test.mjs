@@ -31,6 +31,7 @@ const windowListeners = new Map();
 const context = {
   ArrayBuffer,
   DataView,
+  URL,
   TextDecoder,
   TextEncoder,
   Uint8Array,
@@ -81,6 +82,12 @@ function assert(condition, message) {
 }
 
 assert(game && typeof game.sendChatMessage === "function", "chat sender was not exposed by the game client");
+const ipv6Endpoint = game.resolveWebSocketEndpoint("ws://[::1]:8080/bridge", {
+  serverId: "official-main",
+  sessionToken: "test-token"
+});
+assert(ipv6Endpoint.resolved.host === "[::1]:8080", "IPv6 gateway URL was not preserved by the WebSocket resolver");
+assert(ipv6Endpoint.resolved.searchParams.get("server") === "official-main", "IPv6 gateway URL lost the allowlisted server id");
 assert(game.resolveChatTarget("all", { team: "red" }, protocol) === 254, "broadcast chat target was not resolved");
 assert(game.resolveChatTarget("team", { team: "red" }, protocol) === 250, "team chat target was not resolved");
 assert(game.resolveChatTarget("admin", { team: "red" }, protocol) === 252, "admin chat target was not resolved");

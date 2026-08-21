@@ -88,7 +88,7 @@ design.
 
 | Field | Meaning |
 | --- | --- |
-| `host`, `port` | Local listener. Keep it private until TLS and proxy rules are ready. |
+| `host`, `port` | Local listener. Use an IPv4 literal such as `127.0.0.1`, an IPv6 literal such as `::1`, or `::` for a dual-stack host where the operating system permits it. Keep it private until TLS and proxy rules are ready. |
 | `sessionToken` | Required browser session token. |
 | `allowLegacyQueryToken` | Keep `true` only while older clients still send the token in the query string; set `false` after migration to the subprotocol transport. |
 | `allowedOrigins` | Exact `http://` or `https://` browser origins. Do not use `*`. |
@@ -111,6 +111,15 @@ the gateway authenticates the token and returns `Sec-WebSocket-Protocol:
 bzflag-web-v1`. The `allowLegacyQueryToken` compatibility switch accepts the
 older `?token=...` form until all deployed clients have migrated. Disable it in
 production once that transition is complete.
+
+IPv4 and IPv6 are supported on both sides of the bridge. In the operator
+configuration, write an IPv6 target as a raw literal such as `2001:db8::20`
+(without URL brackets); DNS names may return A and AAAA records, and the
+gateway validates every returned address before selecting one. In a browser
+gateway URL, use the normal URL bracket form, for example
+`ws://[::1]:8080/bridge`. The WebSocket layer carries the same BZWB envelope
+over either address family, while the gateway chooses `tcp4`/`tcp6` and
+`udp4`/`udp6` to match the selected BZFS endpoint.
 
 The service does not trust `Host`, client-supplied target addresses or
 `X-Forwarded-For` by default. `trustProxy` is rejected unless

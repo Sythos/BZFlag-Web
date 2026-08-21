@@ -59,12 +59,13 @@ interface UpgradeOptions {
   subprotocolToken?: string;
   subprotocol?: boolean;
   queryToken?: boolean;
+  host?: string;
 }
 
-function listenTcp(server: TcpServer): Promise<number> {
+function listenTcp(server: TcpServer, host = '127.0.0.1'): Promise<number> {
   return new Promise<number>((resolve, reject) => {
     server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => {
+    server.listen(0, host, () => {
       server.off('error', reject);
       const address = server.address() as AddressInfo;
       resolve(address.port);
@@ -72,10 +73,10 @@ function listenTcp(server: TcpServer): Promise<number> {
   });
 }
 
-function listenUdp(socket: DatagramSocket): Promise<number> {
+function listenUdp(socket: DatagramSocket, host = '127.0.0.1'): Promise<number> {
   return new Promise<number>((resolve, reject) => {
     socket.once('error', reject);
-    socket.bind(0, '127.0.0.1', () => {
+    socket.bind(0, host, () => {
       socket.off('error', reject);
       resolve(socket.address().port);
     });
@@ -167,7 +168,11 @@ function awaitableSocket(port: number, options: UpgradeOptions = {}): Promise<Up
     ? ['Sec-WebSocket-Protocol: bzflag-web-v1, bzflag-token.' + Buffer.from(subprotocolToken, 'utf8').toString('base64url')]
     : [];
   return new Promise<UpgradeResult>((resolve, reject) => {
-    const connection = createConnection({ host: '127.0.0.1', port });
+    const host = options.host || '127.0.0.1';
+    const hostHeader = host.includes(':') && !host.startsWith('[')
+      ? `[${host}]`
+      : host;
+    const connection = createConnection({ host, port });
     let response = Buffer.alloc(0);
     const onData = (chunk: Buffer | string) => {
       response = Buffer.concat([response, Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)]);
@@ -181,7 +186,7 @@ function awaitableSocket(port: number, options: UpgradeOptions = {}): Promise<Up
     connection.on('connect', () => {
       connection.write([
         `GET /bridge?server=${encodeURIComponent(serverId)}${queryToken} HTTP/1.1`,
-        'Host: 127.0.0.1',
+        `Host: ${hostHeader}`,
         'Upgrade: websocket',
         'Connection: Upgrade',
         'Sec-WebSocket-Version: 13',
@@ -280,6 +285,98 @@ test('target policy keeps TCP and UDP on the same non-local BZFS endpoint port',
     servers: [{ id: 'split-port', kind: 'official', host: '127.0.0.1', port: 5154, udpPort: 5155 }],
   });
   assert.equal(localFixture.servers[0]?.udpPort, 5155);
+});
+
+test('gateway listener accepts an IPv6 loopback host', async (t: TestContext) => {
+  const gateway = createGateway({
+    host: '::1',
+    port: 0,
+    sessionToken: 'test-token',
+    allowPrivateAddresses: true,
+    allowedOrigins: ['http://[::1]:3000'],
+  });
+  let address: AddressInfo;
+  try {
+    address = await gateway.start();
+  } catch (error: any) {
+    if (error?.code === 'EADDRNOTAVAIL' || error?.code === 'EAFNOSUPPORT') {
+      t.skip(`IPv6 loopback is unavailable on this runner: ${error.code}`);
+      return;
+    }
+    throw error;
+  }
+  t.after(() => gateway.stop());
+  assert.equal(address.family, 'IPv6');
+  const health = await fetch(`http://[::1]:${address.port}/healthz`).then((response) => response.json());
+  assert.equal(health.status, 'ok');
+});
+
+test('gateway relays TCP and UDP to an IPv6 BZFS endpoint', async (t: TestContext) => {
+  let tcpTarget: TcpServer | null = null;
+  let udpTarget: DatagramSocket | null = null;
+  let gateway: ReturnType<typeof createGateway> | null = null;
+  try {
+    tcpTarget = createTcpServer((socket) => {
+      let buffered = Buffer.alloc(0);
+      let ready = false;
+      socket.on('data', (data: Buffer | string) => {
+        buffered = Buffer.concat([buffered, Buffer.isBuffer(data) ? data : Buffer.from(data)]);
+        if (!ready) {
+          if (buffered.length < BZFLAG_CONNECT_HEADER.length) return;
+          assert.deepEqual(buffered.subarray(0, BZFLAG_CONNECT_HEADER.length), BZFLAG_CONNECT_HEADER);
+          ready = true;
+          buffered = buffered.subarray(BZFLAG_CONNECT_HEADER.length);
+          socket.write(Buffer.concat([Buffer.from('BZFS0221', 'ascii'), Buffer.from([7])]));
+        }
+        if (buffered.length > 0) {
+          socket.write(Buffer.concat([Buffer.from('ipv6-tcp:'), buffered]));
+          buffered = Buffer.alloc(0);
+        }
+      });
+    });
+    const tcpPort = await listenTcp(tcpTarget, '::1');
+    t.after(() => tcpTarget?.close());
+
+    udpTarget = createSocket('udp6');
+    udpTarget.on('message', (data: Buffer, remote: RemoteInfo) => {
+      udpTarget?.send(Buffer.concat([Buffer.from('ipv6-udp:'), data]), remote.port, remote.address);
+    });
+    const udpPort = await listenUdp(udpTarget, '::1');
+    t.after(() => udpTarget?.close());
+
+    gateway = createGateway({
+      host: '127.0.0.1',
+      port: 0,
+      sessionToken: 'test-token',
+      allowPrivateAddresses: true,
+      allowedOrigins: ['http://localhost:3000'],
+      servers: [{ id: 'official-ipv6', kind: 'official', host: '::1', port: tcpPort, udpPort }],
+      limits: { maxFrameBytes: 1024, maxBufferedBytes: 8192, maxMessagesPerSecond: 20, maxBytesPerSecond: 8192, idleTimeoutMs: 5000 },
+    });
+    const address = await gateway.start();
+
+    const { connection, response, remainder } = await awaitableSocket(address.port, { serverId: 'official-ipv6' });
+    assert.match(response, /^HTTP\/1\.1 101 Switching Protocols/);
+    const greeting = await readServerFrame(connection, remainder);
+    assert.deepEqual(decodeBridgeMessage(greeting.payload).payload, Buffer.concat([Buffer.from('BZFS0221', 'ascii'), Buffer.from([7])]));
+
+    connection.write(maskedWebSocketFrame(encodeBridgeMessage(CHANNEL_TCP, Buffer.from('hello'))));
+    const tcpReply = await readServerFrame(connection);
+    assert.deepEqual(decodeBridgeMessage(tcpReply.payload).payload, Buffer.from('ipv6-tcp:hello'));
+
+    connection.write(maskedWebSocketFrame(encodeBridgeMessage(CHANNEL_UDP, Buffer.from('ping'))));
+    const udpReply = await readServerFrame(connection);
+    assert.deepEqual(decodeBridgeMessage(udpReply.payload).payload, Buffer.from('ipv6-udp:ping'));
+    connection.end(maskedWebSocketFrame(Buffer.alloc(0), 8));
+  } catch (error: any) {
+    if (error?.code === 'EADDRNOTAVAIL' || error?.code === 'EAFNOSUPPORT' || error?.code === 'ENETUNREACH') {
+      t.skip(`IPv6 transport is unavailable on this runner: ${error.code}`);
+      return;
+    }
+    throw error;
+  } finally {
+    if (gateway) await gateway.stop();
+  }
 });
 
 test('configuration paths stay relative and the default target policy is official-only', () => {

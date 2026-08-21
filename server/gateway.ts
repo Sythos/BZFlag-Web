@@ -1475,7 +1475,10 @@ export function buildLicenseText() {
 function printStartup(config: GatewayConfig, address: AddressInfo): void {
   const protocol = config.tls ? 'https' : 'http';
   const tokenSource = process.env.BZFLAG_WEB_SESSION_TOKEN ? 'environment' : config.configPath ? 'configuration file' : 'generated at startup';
-  console.log(`BZFlag Web Gateway ${GATEWAY_VERSION} listening on ${protocol}://${address.address}:${address.port}`);
+  const authority = isIP(address.address) === 6 && !address.address.startsWith('[')
+    ? `[${address.address}]`
+    : address.address;
+  console.log(`BZFlag Web Gateway ${GATEWAY_VERSION} listening on ${protocol}://${authority}:${address.port}`);
   console.log(`Allowlisted servers: ${config.servers.filter((server) => server.enabled).map((server) => server.id).join(', ') || 'none'}`);
   console.log(`Session token source: ${tokenSource}`);
 }
