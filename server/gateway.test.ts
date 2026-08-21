@@ -300,6 +300,7 @@ test('gateway listener accepts an IPv6 loopback host', async (t: TestContext) =>
     address = await gateway.start();
   } catch (error: any) {
     if (error?.code === 'EADDRNOTAVAIL' || error?.code === 'EAFNOSUPPORT') {
+      if (process.env.BZFLAG_REQUIRE_IPV6 === 'true') throw error;
       t.skip(`IPv6 loopback is unavailable on this runner: ${error.code}`);
       return;
     }
@@ -370,6 +371,7 @@ test('gateway relays TCP and UDP to an IPv6 BZFS endpoint', async (t: TestContex
     connection.end(maskedWebSocketFrame(Buffer.alloc(0), 8));
   } catch (error: any) {
     if (error?.code === 'EADDRNOTAVAIL' || error?.code === 'EAFNOSUPPORT' || error?.code === 'ENETUNREACH') {
+      if (process.env.BZFLAG_REQUIRE_IPV6 === 'true') throw error;
       t.skip(`IPv6 transport is unavailable on this runner: ${error.code}`);
       return;
     }

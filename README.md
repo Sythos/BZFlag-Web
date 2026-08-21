@@ -28,6 +28,7 @@ SOFTWARE.
 [![Issues](https://img.shields.io/github/issues/Sythos/BZFlag-Web)](https://github.com/Sythos/BZFlag-Web/issues)
 [![Last commit](https://img.shields.io/github/last-commit/Sythos/BZFlag-Web)](https://github.com/Sythos/BZFlag-Web/commits/main/)
 [![Downloads](https://img.shields.io/github/downloads/Sythos/BZFlag-Web/total)](https://github.com/Sythos/BZFlag-Web/releases)
+[![IPv4/IPv6 compatibility](https://github.com/Sythos/BZFlag-Web/actions/workflows/network-compatibility.yml/badge.svg?branch=main)](https://github.com/Sythos/BZFlag-Web/actions/workflows/network-compatibility.yml)
 
 BZFlag Web Client is an independent browser client and Node.js gateway for the
 BZFlag ecosystem. The client is a static HTML5 application whose TypeScript
