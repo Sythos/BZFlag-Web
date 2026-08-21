@@ -62,6 +62,7 @@ SOFTWARE.
   type WorldStateAdapter = {
     apply(event: ProtocolResult): { applied: boolean };
     snapshot(): unknown;
+    setWorldGeometry?: (input: unknown) => { applied: boolean };
   };
   type WorldTransferAdapter = {
     push(chunk: { bytesLeft: number; chunk: Uint8Array }): {
@@ -949,6 +950,10 @@ SOFTWARE.
     (session.renderer as BZFlagWebRendererHandle & {
       setWorldData?: (summary: unknown) => void;
     })?.setWorldData?.(worldSummary);
+    if (session.worldState?.setWorldGeometry) {
+      const geometryResult = session.worldState.setWorldGeometry(worldSummary);
+      if (geometryResult?.applied) session.renderer.setWorldState?.(session.worldState);
+    }
     if (typeof document !== "undefined") {
       document.dispatchEvent(new CustomEvent("bzflag:world-ready", {
         detail: Object.freeze({
