@@ -97,14 +97,15 @@ jobs:
         run: |
           set -euo pipefail
           container_name="bzflag-web-health-${GITHUB_RUN_ID}"
-          cleanup() { docker rm --force "$container_name" >/dev/null 2>&1 || true; }
-          trap cleanup EXIT
+          trap 'docker rm --force "$container_name" >/dev/null 2>&1 || true' EXIT
           docker run --detach --name "$container_name" --publish 18080:8080 "${IMAGE_NAME}:${GITHUB_SHA}"
-          for attempt in $(seq 1 30); do
+          attempt=1
+          while (( attempt <= 30 )); do
             if body="$(curl --fail --silent --show-error http://127.0.0.1:18080/healthz)" && grep -q '"status":"ok"' <<<"$body"; then
               exit 0
             fi
             sleep 1
+            attempt=$((attempt + 1))
           done
           docker logs "$container_name"
           echo "Gateway container did not pass /healthz." >&2
