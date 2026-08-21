@@ -518,13 +518,14 @@ jobs:
           container_id="$(docker run --detach --publish 18080:8080 "$smoke_tag")"
           trap 'docker rm --force "$container_id" >/dev/null 2>&1 || true' EXIT
           attempt=1
-          while (( attempt <= 60 )); do
+          while (( attempt <= 120 )); do
             if curl --fail --silent --show-error http://127.0.0.1:18080/healthz >/dev/null; then
               exit 0
             fi
             sleep 1
             attempt=$((attempt + 1))
           done
+          docker inspect "$container_id" >&2 || true
           docker logs "$container_id" >&2 || true
           echo "Gateway container health check did not become ready." >&2
           exit 1

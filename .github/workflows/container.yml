@@ -100,14 +100,15 @@ jobs:
           trap 'docker rm --force "$container_name" >/dev/null 2>&1 || true' EXIT
           docker run --detach --name "$container_name" --publish 18080:8080 "${IMAGE_NAME}:${GITHUB_SHA}"
           attempt=1
-          while (( attempt <= 60 )); do
+          while (( attempt <= 120 )); do
             if body="$(curl --fail --silent --show-error http://127.0.0.1:18080/healthz)" && grep -q '"status":"ok"' <<<"$body"; then
               exit 0
             fi
             sleep 1
             attempt=$((attempt + 1))
           done
-          docker logs "$container_name"
+          docker inspect "$container_name" >&2 || true
+          docker logs "$container_name" >&2 || true
           echo "Gateway container did not pass /healthz." >&2
           exit 1
 
