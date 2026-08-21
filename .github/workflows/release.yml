@@ -262,7 +262,6 @@ jobs:
     uses: ./.github/workflows/security.yml
     with:
       ref: ${{ needs.validate-ref.outputs.release_tag }}
-    secrets: inherit
 
   package:
     name: Build release packages
