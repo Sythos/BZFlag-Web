@@ -228,6 +228,41 @@ files to copy and edit, how to create the session token and official-server
 allowlist, how to run the native or Docker service, how to configure IPv4/IPv6
 and reverse proxies, and which security checks must pass before public use.
 
+==> Voice audio and project policy note
+
+Voice audio over WebRTC is not supported yet. The current browser client plays
+local game effects through the Web Audio API, but it does not capture a
+microphone, establish peer connections, exchange remote audio tracks or expose
+team, private, nearby or observer voice channels. BZFlag's native audio
+behaviour is therefore not being presented as a WebRTC feature; any future
+voice implementation will be an explicitly documented web extension.
+
+The licensing and dependency boundaries are deliberate:
+
+=> source and assets derived from BZFlag retain their original headers and
+   applicable LGPL-2.1/MPL-2.0 terms;
+=> new gateway, client, build and documentation files are MIT-licensed by
+   Sythos, while third-party assets retain their own notices;
+=> package manifests and lockfiles keep dependency versions auditable and
+   reproducible, so CI can build with `npm ci`, generate the release SBOM and
+   verify that an upgrade has not silently changed the licensing boundary.
+
+The gateway also separates browser authentication from BZFS player identity:
+
+=> the browser submits only a stable identifier for an explicitly allowlisted
+   official server; it cannot choose an arbitrary upstream host or port;
+=> the gateway session bearer authenticates browser-to-gateway access through
+   the WebSocket subprotocol and is never forwarded as a BZFS player token;
+=> an optional BZFS/player token is a separate value and is sent upstream only
+   when the selected server requires it;
+=> the gateway validates the `BZFLAG`/`BZFS` greeting, protocol version and
+   assigned player id before forwarding queued traffic or opening UDP, while
+   credentials and bearer tokens stay out of normal logs.
+
+These controls keep the default deployment limited to recognised official
+servers and prevent a browser session, dependency update or licensing shortcut
+from turning the gateway into an unaudited general-purpose proxy.
+
 ==> Disclaimer
 
 This is an independent web derivation and gateway. It is not an official BZFlag
