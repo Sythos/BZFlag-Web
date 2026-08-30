@@ -181,9 +181,9 @@ requireMarker(release, ".github/workflows/release.yml", "zip -X -q -r \"bzflag-w
 requireMarker(release, ".github/workflows/release.yml", "node .github/scripts/verify-release-artifacts.mjs");
 const security = workflows.get("security.yml") || "";
 requireMarker(security, ".github/workflows/security.yml", 'tags:\n      - "v*.*.*"');
-requireMarker(security, ".github/workflows/security.yml", "github/codeql-action/init@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd");
-requireMarker(security, ".github/workflows/security.yml", "github/codeql-action/analyze@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd");
-requireMarker(security, ".github/workflows/security.yml", "github/codeql-action/upload-sarif@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd");
+requireMarker(security, ".github/workflows/security.yml", "github/codeql-action/init@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28");
+requireMarker(security, ".github/workflows/security.yml", "github/codeql-action/analyze@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28");
+requireMarker(security, ".github/workflows/security.yml", "github/codeql-action/upload-sarif@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28");
 requireMarker(security, ".github/workflows/security.yml", "actions/dependency-review-action@");
 requireMarker(security, ".github/workflows/security.yml", "gitleaks/gitleaks-action@");
 requireMarker(security, ".github/workflows/security.yml", "aquasecurity/trivy-action@");
