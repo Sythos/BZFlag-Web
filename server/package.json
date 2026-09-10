@@ -20,10 +20,10 @@
   },
   "devDependencies": {
     "@types/node": "26.2.0",
-    "undici-types": "8.10.0",
+    "undici-types": "8.10.2",
     "typescript": "7.0.2"
   },
   "overrides": {
-    "undici-types": "8.10.0"
+    "undici-types": "8.10.2"
   }
 }
